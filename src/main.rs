@@ -6,7 +6,9 @@
 
 extern crate triple_buffer;
 
+use std::error::Error;
 use triple_buffer::TripleBuffer;
+
 
 /// Representation of an asynchronous operation's status
 ///
@@ -43,7 +45,28 @@ enum AsyncOpStatus<Details: AsyncOpStatusDetails> {
 }
 
 
-/// TODO: Asynchronous operation status details
+/// Implementation-specific details on the status of asynchronous operations
+trait AsyncOpStatusDetails {
+    /// Details on the status of pending operations. For example, OpenCL
+    /// distinguishes commands which are queued on the host and on the device.
+    type Pending: Clone + PartialEq + Send;
+
+    /// Details on the status of running operations. A typical application is
+    /// tracking progress using unsigned integer counters.
+    type Running: Clone + PartialEq + Send;
+
+    /// Details on the status of completed operations. Can be used to store a
+    /// handle to operation results, for example.
+    type Done: Clone + PartialEq + Send;
+
+    /// Details on the status of cancelled operations. Can be used to provide
+    /// details on why a client has cancelled some operation.
+    type Cancelled: Clone + PartialEq + Send;
+
+    /// Details on the status of erronerous operations. Can be used by the
+    /// server to explain why it could not complete its work.
+    type Error: Clone + PartialEq + Send + Error;
+}
 
 
 // For now, this is just a copy/paste of the TripleBuffer usage example
