@@ -70,17 +70,21 @@ trait AsyncOpStatusDetails {
 }
 
 
-/// If the server has no errors to repport, you can use this for error details
+/// This struct, and the associated constant which represents the only value
+/// that it can take, can be used as a placeholder when the implementation does
+/// not need to add extra details to the asynchronous operation status.
 #[derive(Clone, Debug, PartialEq)]
-struct NoErrorDetails {}
+struct NoDetails {}
 //
-impl fmt::Display for NoErrorDetails {
+const NO_DETAILS: NoDetails = NoDetails {};
+//
+impl fmt::Display for NoDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<No error details>")
+        write!(f, "<No details>")
     }
 }
 //
-impl Error for NoErrorDetails {
+impl Error for NoDetails {
     fn description(&self) -> &str {
         "<No error details>"
     }
@@ -91,16 +95,22 @@ impl Error for NoErrorDetails {
 }
 
 
-/// If the standard asynchronous operation status is enough for you, you don't
-/// need to use the AsyncOpStatusDetails feature
-type StandardAsyncOpStatus = AsyncOpStatus<()>;
+/// When you don't need any implementation details, you can use this struct
+/// and the associated constants for extra writing convenience.
+type StandardAsyncOpStatus = AsyncOpStatus<NoDetails>;
 //
-impl AsyncOpStatusDetails for () {
-    type PendingDetails = ();
-    type RunningDetails = ();
-    type DoneDetails = ();
-    type CancelledDetails = ();
-    type ErrorDetails = NoErrorDetails;
+const PENDING: StandardAsyncOpStatus = AsyncOpStatus::Pending(NO_DETAILS);
+const RUNNING: StandardAsyncOpStatus = AsyncOpStatus::Running(NO_DETAILS);
+const DONE: StandardAsyncOpStatus = AsyncOpStatus::Done(NO_DETAILS);
+const CANCELLED: StandardAsyncOpStatus = AsyncOpStatus::Cancelled(NO_DETAILS);
+const ERROR: StandardAsyncOpStatus = AsyncOpStatus::Error(NO_DETAILS);
+//
+impl AsyncOpStatusDetails for NoDetails {
+    type PendingDetails = NoDetails;
+    type RunningDetails = NoDetails;
+    type DoneDetails = NoDetails;
+    type CancelledDetails = NoDetails;
+    type ErrorDetails = NoDetails;
 }
 
 
