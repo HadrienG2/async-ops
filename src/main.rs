@@ -52,31 +52,40 @@ mod status {
 
     /// Implementation-specific details on the status of asynchronous operations
     trait AsyncOpStatusDetails {
-        /// Details on the status of pending operations. For example, OpenCL
-        /// distinguishes commands which are queued on the host vs the device.
+        /// Details on the status of pending operations
+        ///
+        /// Possible usage: Represent OpenCL's distinction between a command
+        /// being submitted to the host driver, and queued on the device.
+        ///
         type PendingDetails: Clone + PartialEq + Send;
 
-        /// Details on the status of running operations. A typical application
-        /// is tracking progress using unsigned integer counters.
+        /// Details on the status of running operations
+        ///
+        /// Possible usage: Keep the client informed about server's progress.
+        ///
         type RunningDetails: Clone + PartialEq + Send;
 
-        /// Details on the status of completed operations. Can be used to store
-        /// a handle to operation results, for example.
+        /// Details on the status of completed operations
+        ///
+        /// Possible usage: Provide or give access to the operation's result.
+        ///
         type DoneDetails: Clone + PartialEq + Send;
 
-        /// Details on the status of cancelled operations. Can be used to
-        /// provide details on why a client has cancelled some operation.
+        /// Details on the status of cancelled operations
+        ///
+        /// Possible usage: Indicate why an operation was cancelled.
+        ///
         type CancelledDetails: Clone + PartialEq + Send;
 
-        /// Details on the status of erronerous operations. Can be used by the
-        /// server to explain why it could not complete its work.
+        /// Details on the status of erronerous operations
+        ///
+        /// Possible usage: Explain why the server could not perform the work.
+        ///
         type ErrorDetails: Clone + PartialEq + Send + Error;
     }
 
 
-    /// This struct, and the associated constant which represents the only value
-    /// that it can take, can be used as a placeholder when the implementation
-    /// does not need to add extra details to the asynchronous operation status.
+    /// Placeholder for unneeded asynchronous operation details
     #[derive(Clone, Debug, PartialEq)]
     struct NoDetails {}
     //
@@ -99,8 +108,7 @@ mod status {
     }
 
 
-    /// When you don't need any implementation details, you can use this struct
-    /// and the associated constants for extra writing convenience.
+    /// Fully standard asynchronous operation status, without any detail
     type StandardAsyncOpStatus = AsyncOpStatus<NoDetails>;
     //
     const PENDING: StandardAsyncOpStatus = AsyncOpStatus::Pending(NO_DETAILS);
