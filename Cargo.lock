@@ -1,0 +1,14 @@
+[root]
+name = "threaded_async_ops"
+version = "0.1.0"
+dependencies = [
+ "triple_buffer 0.1.0 (git+https://github.com/HadrienG2/triple-buffer.git)",
+]
+
+[[package]]
+name = "triple_buffer"
+version = "0.1.0"
+source = "git+https://github.com/HadrienG2/triple-buffer.git#71a79c8228b8cd9db088f8d109fa9c947620c676"
+
+[metadata]
+"checksum triple_buffer 0.1.0 (git+https://github.com/HadrienG2/triple-buffer.git)" = "<none>"
