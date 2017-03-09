@@ -39,8 +39,7 @@ mod lockfree {
         // TODO: Add support for client callbacks
     }
     //
-    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details>
-    {
+    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
             // TODO: Check that we do not submit a final state twice
@@ -63,8 +62,7 @@ mod lockfree {
         // TODO: Add support for client callbacks
     }
     //
-    impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details>
-    {
+    impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
         /// Access the current asynchronous operation status
         pub fn status(&mut self) -> &AsyncOpStatus<Details> {
             self.buf_output.read()
@@ -130,8 +128,7 @@ mod locked {
         reached_final_status: bool,
     }
     //
-    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details>
-    {
+    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
             // This should only be run if we have not yet reached a final status
@@ -162,8 +159,7 @@ mod locked {
         shared: Arc<SharedState<Details>>,
     }
     //
-    impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details>
-    {
+    impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
         /// Access the current asynchronous operation status
         pub fn status(&self) -> AsyncOpStatus<Details> {
             (*self.shared.status.lock().unwrap()).clone()
@@ -174,7 +170,7 @@ mod locked {
             // Read the current operation status
             let mut status_lock = self.shared.status.lock().unwrap();
 
-            // Only wait if the status can still change
+            // Only wait if the operation status can still change
             if !status::is_final(&*status_lock) {
                 let wait_result = self.shared.update_cv.wait(status_lock);
                 status_lock = wait_result.unwrap();
