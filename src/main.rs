@@ -171,7 +171,7 @@ mod status {
     }
 
 
-    /// The proposed error type can handle both client and server errors
+    /// Asynchronous operation errors are described through the following enum
     #[derive(Clone, Debug, PartialEq)]
     pub enum AsyncOpError<Details: AsyncOpStatusDetails> {
         /// The server was killed before the operation reached a final status
@@ -251,6 +251,8 @@ mod status {
         AsyncOpStatus::Done(NO_DETAILS);
     pub const CANCELLED: StandardAsyncOpStatus =
         AsyncOpStatus::Cancelled(NO_DETAILS);
+    pub const SERVER_KILLED: StandardAsyncOpStatus =
+        AsyncOpStatus::Error(AsyncOpError::ServerKilled);
     //
     impl AsyncOpStatusDetails for NoDetails {
         type PendingDetails = NoDetails;
@@ -262,8 +264,30 @@ mod status {
 }
 
 
-// For now, this is just a copy/paste of the TripleBuffer usage example
 fn main() {
+    // === ASYNCHRONOUS OPERATION TEST ===
+
+    // Create an asynchronous operation
+    let op = synchronized::AsyncOp::new(status::PENDING);
+
+    // Split it into a client and a server
+    let (mut op_server, op_client) = op.split();
+
+    // Check initial status
+    println!("Initial operation status is {:?}", op_client.status());
+    {
+        // Update the status, then drop the server
+        let mut server = op_server;
+        server.update(status::RUNNING);
+        println!("New operation status is {:?}", op_client.status());
+    }
+
+    // Check final status
+    println!("Final operation status is {:?}", op_client.status());
+    assert_eq!(op_client.status(), status::SERVER_KILLED);
+    
+    // === TRIPLE BUFFER ===
+
     // Create a triple buffer of any Clone type:
     let buf = TripleBuffer::new(0);
 
