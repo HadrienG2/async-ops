@@ -89,7 +89,10 @@ mod locked {
 
     /// Asynchronous operation object
     pub struct AsyncOp<StatusDetails: AsyncOpStatusDetails> {
+        /// Server interface used to submit status updates
         server: AsyncOpServer<StatusDetails>,
+
+        /// Client interface used to monitor the operation status
         client: AsyncOpClient<StatusDetails>,
     }
     //
@@ -124,7 +127,11 @@ mod locked {
 
     /// Server interface, used to submit status updates
     pub struct AsyncOpServer<Details: AsyncOpStatusDetails> {
+        /// Reference-counted shared state
         shared: Arc<SharedState<Details>>,
+
+        /// Flag indicating that the operation status has reached a final state
+        /// and will not change anymore
         reached_final_status: bool,
     }
     //
@@ -156,6 +163,7 @@ mod locked {
 
     /// Client interface, used to synchronize with the operation status
     pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
+        /// Reference-counted shared state
         shared: Arc<SharedState<Details>>,
     }
     //
@@ -184,7 +192,10 @@ mod locked {
 
     /// State shared between the client and the server
     struct SharedState<Details: AsyncOpStatusDetails> {
+        /// Current asynchronous operation status (mutex-protected)
         status: Mutex<AsyncOpStatus<Details>>,
+
+        /// Condition variable used to notify clients about status updates
         update_cv: Condvar,
     }
 
