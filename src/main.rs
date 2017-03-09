@@ -9,6 +9,23 @@ extern crate triple_buffer;
 use triple_buffer::TripleBuffer;
 
 
+/// Common interface to all asynchronous operations
+mod interface {
+    /// An asynchronous operation server can submit status updates
+    trait AsyncOpServer<StatusDetails: ::status::AsyncOpStatusDetails> {
+        /// Update the asynchronous operation status
+        fn update(&mut self, status: ::status::AsyncOpStatus<StatusDetails>);
+    }
+
+    /// An asynchronous operation client can poll the operation status, and
+    /// synchronize with it in implementation-dependent ways
+    trait AsyncOpClient<StatusDetails: ::status::AsyncOpStatusDetails> {
+        /// Access the current asynchronous operation status
+        fn status(&mut self) -> &::status::AsyncOpStatus<StatusDetails>;
+    }
+}
+
+
 /// Facilities to represent the status of asynchronous operations
 mod status {
     use std::error::Error;
@@ -32,7 +49,7 @@ mod status {
     /// Error or Cancelled state, its state won't change anymore.
     ///
     #[derive(Clone, Debug, PartialEq)]
-    enum AsyncOpStatus<Details: AsyncOpStatusDetails> {
+    pub enum AsyncOpStatus<Details: AsyncOpStatusDetails> {
         /// The request has been submitted, but not been processed yet
         Pending(Details::PendingDetails),
 
@@ -51,7 +68,7 @@ mod status {
 
 
     /// Implementation-specific details on the status of asynchronous operations
-    trait AsyncOpStatusDetails {
+    pub trait AsyncOpStatusDetails {
         /// Details on the status of pending operations
         ///
         /// Possible usage: Represent OpenCL's distinction between a command
@@ -87,9 +104,9 @@ mod status {
 
     /// Placeholder for unneeded asynchronous operation details
     #[derive(Clone, Debug, PartialEq)]
-    struct NoDetails {}
+    pub struct NoDetails {}
     //
-    const NO_DETAILS: NoDetails = NoDetails {};
+    pub const NO_DETAILS: NoDetails = NoDetails {};
     //
     impl fmt::Display for NoDetails {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -109,15 +126,18 @@ mod status {
 
 
     /// Fully standard asynchronous operation status, without any detail
-    type StandardAsyncOpStatus = AsyncOpStatus<NoDetails>;
+    pub type StandardAsyncOpStatus = AsyncOpStatus<NoDetails>;
     //
-    const PENDING: StandardAsyncOpStatus = AsyncOpStatus::Pending(NO_DETAILS);
-    const RUNNING: StandardAsyncOpStatus = AsyncOpStatus::Running(NO_DETAILS);
-    const DONE: StandardAsyncOpStatus = AsyncOpStatus::Done(NO_DETAILS);
-    const CANCELLED: StandardAsyncOpStatus = AsyncOpStatus::Cancelled(
-        NO_DETAILS
-    );
-    const ERROR: StandardAsyncOpStatus = AsyncOpStatus::Error(NO_DETAILS);
+    pub const PENDING: StandardAsyncOpStatus =
+        AsyncOpStatus::Pending(NO_DETAILS);
+    pub const RUNNING: StandardAsyncOpStatus =
+        AsyncOpStatus::Running(NO_DETAILS);
+    pub const DONE: StandardAsyncOpStatus =
+        AsyncOpStatus::Done(NO_DETAILS);
+    pub const CANCELLED: StandardAsyncOpStatus =
+        AsyncOpStatus::Cancelled(NO_DETAILS);
+    pub const ERROR: StandardAsyncOpStatus =
+        AsyncOpStatus::Error(NO_DETAILS);
     //
     impl AsyncOpStatusDetails for NoDetails {
         type PendingDetails = NoDetails;
