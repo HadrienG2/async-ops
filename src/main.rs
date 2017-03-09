@@ -6,21 +6,49 @@
 
 extern crate triple_buffer;
 
-use triple_buffer::TripleBuffer;
+
+/// Lock-free implementation of asynchronous operations
+///
+/// This implementation of the asynchronous operation concept is based on a
+/// triple buffer. It does not allow waiting for updates (which is racey and
+/// bad for performance anyway), instead relying on an asynchronous callback
+/// mechanism to notify the client about status updates. This allows much
+/// improved performance at the cost of a less natural coding style.
+///
+mod lockfree {
+    use status::{AsyncOpStatus, AsyncOpStatusDetails};
+    use triple_buffer::{TripleBufferInput, TripleBufferOutput};
+
+    /// Server interface, used to submit status updates
+    pub struct AsyncOpServer<Details: AsyncOpStatusDetails> {
+        /// Status updates will be submitted through this triple buffer
+        buf_input: TripleBufferInput<AsyncOpStatus<Details>>,
+
+        // TODO: Add callback support
+    }
+
+    /// Client interface, used to synchronize with the operation status
+    pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
+        /// Current operation status will be read through this triple buffer
+        buf_output: TripleBufferOutput<AsyncOpStatus<Details>>,
+
+        // TODO: Add callback support
+    }
+}
 
 
-/// Synchronized implementation of asynchronous operations
+/// Lock-based implementation of asynchronous operations
 ///
 /// This implementation of the asynchronous operation concept uses a mutex to
-/// synchronize access to the operation status. This limits the maximal update
+/// synchronize access to the operation status. This limits the maximal
 /// performance that can be achieved, but allows a client to wait for a status
 /// updates in the rare situations where this is desired.
 ///
-mod synchronized {
+mod locked {
     use status::{AsyncOpStatus, AsyncOpStatusDetails};
-    use std::sync::{Arc, Mutex, Condvar};
     use status::AsyncOpStatus::*;
     use status::AsyncOpError::*;
+    use std::sync::{Arc, Mutex, Condvar};
 
     /// Asynchronous operation object
     pub struct AsyncOp<StatusDetails: AsyncOpStatusDetails> {
@@ -180,7 +208,7 @@ mod status {
 
 
     /// Implementation-specific details on the status of asynchronous operations
-    pub trait AsyncOpStatusDetails: Clone {
+    pub trait AsyncOpStatusDetails: Clone + PartialEq + Send {
         /// Details on the status of pending operations
         ///
         /// Possible usage: Represent OpenCL's distinction between a command
@@ -262,13 +290,11 @@ mod status {
 
 
 fn main() {
-    // === ASYNCHRONOUS OPERATION TEST ===
-
     // Create an asynchronous operation
-    let op = synchronized::AsyncOp::new(status::PENDING);
+    let op = locked::AsyncOp::new(status::PENDING);
 
     // Split it into a client and a server
-    let (mut op_server, op_client) = op.split();
+    let (op_server, op_client) = op.split();
 
     // Check initial status
     println!("Initial operation status is {:?}", op_client.status());
@@ -282,20 +308,4 @@ fn main() {
     // Check final status
     println!("Final operation status is {:?}", op_client.status());
     assert_eq!(op_client.status(), status::SERVER_KILLED);
-    
-    // === TRIPLE BUFFER ===
-
-    // Create a triple buffer of any Clone type:
-    let buf = TripleBuffer::new(0);
-
-    // Split it into an input and output interface, to be respectively sent to
-    // the producer thread and the consumer thread:
-    let (mut buf_input, mut buf_output) = buf.split();
-
-    // The producer can move a value into the buffer at any time
-    buf_input.write(42);
-
-    // The consumer can access the latest value from the producer at any time
-    let latest_value_ref = buf_output.read();
-    assert_eq!(*latest_value_ref, 42);
 }
