@@ -20,6 +20,7 @@ mod synchronized {
     use status::{AsyncOpStatus, AsyncOpStatusDetails};
     use std::sync::{Arc, Mutex, Condvar};
     use status::AsyncOpStatus::*;
+    use status::AsyncOpError::*;
 
     /// Asynchronous operation object
     pub struct AsyncOp<StatusDetails: AsyncOpStatusDetails> {
@@ -29,7 +30,7 @@ mod synchronized {
     //
     impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
         /// Create a new asynchronous operation object with some initial status
-        fn new(initial: AsyncOpStatus<Details>) -> Self {
+        pub fn new(initial: AsyncOpStatus<Details>) -> Self {
             let shared_state = Arc::new(SharedState::new(initial));
             AsyncOp {
                 server: AsyncOpServer { shared: shared_state.clone() },
@@ -39,7 +40,7 @@ mod synchronized {
 
         /// Split the asynchronous operation object into a client and server
         /// objects which can be respectively sent to client and server threads
-        fn split(self) -> (AsyncOpServer<Details>, AsyncOpClient<Details>) {
+        pub fn split(self) -> (AsyncOpServer<Details>, AsyncOpClient<Details>) {
             (self.server, self.client)
         }
     }
@@ -53,12 +54,30 @@ mod synchronized {
     impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details>
     {
         /// Submit an asynchronous operation status update
-        fn update(&mut self, status: AsyncOpStatus<Details>) {
+        pub fn update(&mut self, status: AsyncOpStatus<Details>) {
             // Update the value of the asynchronous operation status
             *self.shared.status.lock().unwrap() = status;
 
             // Notify the reader that an update has occured
             self.shared.update_cv.notify_all();
+        }
+    }
+    //
+    impl<Details: AsyncOpStatusDetails> Drop for AsyncOpServer<Details> {
+        /// If the server is killed before the asynchronous operation has
+        /// reached its final status, we'll treat this as an error
+        fn drop(&mut self) {
+            // Check the final operation status
+            let final_status = (*self.shared.status.lock().unwrap()).clone();
+            match final_status {
+                // If the asynchronous operation is not in a final state, report
+                // this to the client as an error
+                Pending(_) | Running(_)  => {
+                    self.update(AsyncOpStatus::Error(ServerKilled));
+                }
+                // Otherwise, do nothing: everything is normal
+                Done(_) | Cancelled(_) | Error(_) => {}
+            }
         }
     }
 
@@ -71,12 +90,12 @@ mod synchronized {
     impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details>
     {
         /// Access the current asynchronous operation status
-        fn status(&self) -> AsyncOpStatus<Details> {
+        pub fn status(&self) -> AsyncOpStatus<Details> {
             (*self.shared.status.lock().unwrap()).clone()
         }
 
-        /// Wait for a status update or a final status
-        fn wait(&self) -> AsyncOpStatus<Details> {
+        /// Wait for a status update or a final operation status
+        pub fn wait(&self) -> AsyncOpStatus<Details> {
             // Read the current operation status
             let mut status_lock = self.shared.status.lock().unwrap();
             match *status_lock {
@@ -85,7 +104,7 @@ mod synchronized {
                     let wait_result = self.shared.update_cv.wait(status_lock);
                     status_lock = wait_result.unwrap();
                 }
-                // Otherwise, we'll just return the final status
+                // Otherwise, return the final operation status
                 Done(_) | Cancelled(_) | Error(_) => {}
             }
             (*status_lock).clone()
@@ -148,7 +167,18 @@ mod status {
         Cancelled(Details::CancelledDetails),
 
         /// The server has failed to process the request
-        Error(Details::ErrorDetails),
+        Error(AsyncOpError<Details>),
+    }
+
+
+    /// The proposed error type can handle both client and server errors
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum AsyncOpError<Details: AsyncOpStatusDetails> {
+        /// The server was killed before the operation reached a final status
+        ServerKilled,
+
+        /// An application-specific error has occurred
+        CustomError(Details::ErrorDetails)
     }
 
 
@@ -221,8 +251,6 @@ mod status {
         AsyncOpStatus::Done(NO_DETAILS);
     pub const CANCELLED: StandardAsyncOpStatus =
         AsyncOpStatus::Cancelled(NO_DETAILS);
-    pub const ERROR: StandardAsyncOpStatus =
-        AsyncOpStatus::Error(NO_DETAILS);
     //
     impl AsyncOpStatusDetails for NoDetails {
         type PendingDetails = NoDetails;
