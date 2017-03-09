@@ -136,8 +136,6 @@ mod locked {
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
             // This should only be run if we have not yet reached a final status
             debug_assert!(!self.reached_final_status);
-
-            // Check if we're reaching such a state right now
             self.reached_final_status = status::is_final(&status);
 
             // Update the value of the asynchronous operation status
