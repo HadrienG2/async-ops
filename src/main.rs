@@ -10,6 +10,10 @@ extern crate triple_buffer;
 // TODO: Think about interface commonalities between locked and lock-free
 //       implementations of asynchronous operations.
 
+
+// TODO: Extract independent concepts to dedicated code modules.
+
+
 /// Lock-free implementation of asynchronous operations
 ///
 /// This implementation of the asynchronous operation concept is based on a
@@ -66,6 +70,9 @@ mod lockfree {
 
         // TODO: Add support for client callbacks
     }
+
+
+    // TODO: Add tests and benchmarks
 }
 
 
@@ -184,13 +191,16 @@ mod locked {
         status: Mutex<AsyncOpStatus<Details>>,
         update_cv: Condvar,
     }
+
+
+    // TODO: Add tests and benchmarks
 }
 
 
 /// Facilities to represent the status of asynchronous operations
 mod status {
     use std::error::Error;
-    use std::fmt;
+    use std::fmt::{self, Debug};
 
     /// Representation of an asynchronous operation's status
     ///
@@ -226,6 +236,9 @@ mod status {
         /// The server has failed to process the request
         Error(AsyncOpError<Details>),
     }
+    //
+    impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
+        for AsyncOpStatus<Details> {}
 
 
     /// Asynchronous operation errors are described through the following enum
@@ -237,40 +250,49 @@ mod status {
         /// An application-specific error has occurred
         CustomError(Details::ErrorDetails)
     }
+    //
+    impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
+        for AsyncOpError<Details> {}
+
+
+    /// Every component of the asynchronous operation status should follow the
+    /// following trait bounds
+    pub trait AsyncOpStatusTraits: Clone + Debug + PartialEq + Send {}
 
 
     /// Implementation-specific details on the status of asynchronous operations
-    pub trait AsyncOpStatusDetails: Clone + PartialEq + Send {
+    /// are specified through an implementation of the following trait.
+    pub trait AsyncOpStatusDetails: AsyncOpStatusTraits {
         /// Details on the status of pending operations
         ///
         /// Possible usage: Represent OpenCL's distinction between a command
         /// being submitted to the host driver, and queued on the device.
         ///
-        type PendingDetails: Clone + PartialEq + Send;
+        type PendingDetails: AsyncOpStatusTraits;
 
         /// Details on the status of running operations
         ///
         /// Possible usage: Keep the client informed about server's progress.
         ///
-        type RunningDetails: Clone + PartialEq + Send;
+        type RunningDetails: AsyncOpStatusTraits;
 
         /// Details on the status of completed operations
         ///
         /// Possible usage: Provide or give access to the operation's result.
         ///
-        type DoneDetails: Clone + PartialEq + Send;
+        type DoneDetails: AsyncOpStatusTraits;
 
         /// Details on the status of cancelled operations
         ///
         /// Possible usage: Indicate why an operation was cancelled.
         ///
-        type CancelledDetails: Clone + PartialEq + Send;
+        type CancelledDetails: AsyncOpStatusTraits;
 
         /// Details on the status of erronerous operations
         ///
         /// Possible usage: Explain why the server could not perform the work.
         ///
-        type ErrorDetails: Clone + PartialEq + Send + Error;
+        type ErrorDetails: AsyncOpStatusTraits + Error;
     }
 
 
@@ -295,6 +317,8 @@ mod status {
             None
         }
     }
+    //
+    impl AsyncOpStatusTraits for NoDetails {}
 
 
     /// Fully standard asynchronous operation status, without any detail
