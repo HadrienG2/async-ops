@@ -31,14 +31,22 @@ mod synchronized {
     impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
         /// Create a new asynchronous operation object with some initial status
         pub fn new(initial: AsyncOpStatus<Details>) -> Self {
-            let shared_state = Arc::new(SharedState::new(initial));
+            // Start with the shared state...
+            let shared_state = Arc::new(
+                SharedState {
+                    status: Mutex::new(initial),
+                    update_cv: Condvar::new(),
+                }
+            );
+
+            // ...then build the client and server
             AsyncOp {
                 server: AsyncOpServer { shared: shared_state.clone() },
                 client: AsyncOpClient { shared: shared_state },
             }
         }
 
-        /// Split the asynchronous operation object into a client and server
+        /// Split the asynchronous operation object into client and server
         /// objects which can be respectively sent to client and server threads
         pub fn split(self) -> (AsyncOpServer<Details>, AsyncOpClient<Details>) {
             (self.server, self.client)
@@ -64,14 +72,13 @@ mod synchronized {
     }
     //
     impl<Details: AsyncOpStatusDetails> Drop for AsyncOpServer<Details> {
-        /// If the server is killed before the asynchronous operation has
-        /// reached its final status, we'll treat this as an error
+        /// If the server is killed before the operation has reached its final
+        /// status, notify the client in order to prevent hangs
         fn drop(&mut self) {
             // Check the final operation status
             let final_status = (*self.shared.status.lock().unwrap()).clone();
             match final_status {
-                // If the asynchronous operation is not in a final state, report
-                // this to the client as an error
+                // Report early server exit as an error
                 Pending(_) | Running(_)  => {
                     self.update(AsyncOpStatus::Error(ServerKilled));
                 }
@@ -94,7 +101,7 @@ mod synchronized {
             (*self.shared.status.lock().unwrap()).clone()
         }
 
-        /// Wait for a status update or a final operation status
+        /// Wait for either a status update or a final operation status
         pub fn wait(&self) -> AsyncOpStatus<Details> {
             // Read the current operation status
             let mut status_lock = self.shared.status.lock().unwrap();
@@ -116,16 +123,6 @@ mod synchronized {
     struct SharedState<Details: AsyncOpStatusDetails> {
         status: Mutex<AsyncOpStatus<Details>>,
         update_cv: Condvar,
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> SharedState<Details> {
-        /// Construct the shared state with some initial status
-        fn new(initial: AsyncOpStatus<Details>) -> SharedState<Details> {
-            SharedState {
-                status: Mutex::new(initial),
-                update_cv: Condvar::new(),
-            }
-        }
     }
 }
 
