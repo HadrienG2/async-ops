@@ -9,19 +9,104 @@ extern crate triple_buffer;
 use triple_buffer::TripleBuffer;
 
 
-/// Common interface to all asynchronous operations
-mod interface {
-    /// An asynchronous operation server can submit status updates
-    trait AsyncOpServer<StatusDetails: ::status::AsyncOpStatusDetails> {
-        /// Update the asynchronous operation status
-        fn update(&mut self, status: ::status::AsyncOpStatus<StatusDetails>);
+/// Synchronized implementation of asynchronous operations
+///
+/// This implementation of the asynchronous operation concept uses a mutex to
+/// synchronize access to the operation status. This limits the maximal update
+/// performance that can be achieved, but allows a client to wait for a status
+/// updates in the rare situations where this is desired.
+///
+mod synchronized {
+    use status::{AsyncOpStatus, AsyncOpStatusDetails};
+    use std::sync::{Arc, Mutex, Condvar};
+    use status::AsyncOpStatus::*;
+
+    /// Asynchronous operation object
+    pub struct AsyncOp<StatusDetails: AsyncOpStatusDetails> {
+        server: AsyncOpServer<StatusDetails>,
+        client: AsyncOpClient<StatusDetails>,
+    }
+    //
+    impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
+        /// Create a new asynchronous operation object with some initial status
+        fn new(initial: AsyncOpStatus<Details>) -> Self {
+            let shared_state = Arc::new(SharedState::new(initial));
+            AsyncOp {
+                server: AsyncOpServer { shared: shared_state.clone() },
+                client: AsyncOpClient { shared: shared_state },
+            }
+        }
+
+        /// Split the asynchronous operation object into a client and server
+        /// objects which can be respectively sent to client and server threads
+        fn split(self) -> (AsyncOpServer<Details>, AsyncOpClient<Details>) {
+            (self.server, self.client)
+        }
     }
 
-    /// An asynchronous operation client can poll the operation status, and
-    /// synchronize with it in implementation-dependent ways
-    trait AsyncOpClient<StatusDetails: ::status::AsyncOpStatusDetails> {
+
+    /// Server interface, used to submit status updates
+    pub struct AsyncOpServer<Details: AsyncOpStatusDetails> {
+        shared: Arc<SharedState<Details>>,
+    }
+    //
+    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details>
+    {
+        /// Submit an asynchronous operation status update
+        fn update(&mut self, status: AsyncOpStatus<Details>) {
+            // Update the value of the asynchronous operation status
+            *self.shared.status.lock().unwrap() = status;
+
+            // Notify the reader that an update has occured
+            self.shared.update_cv.notify_all();
+        }
+    }
+
+
+    /// Client interface, used to synchronize with the operation status
+    pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
+        shared: Arc<SharedState<Details>>,
+    }
+    //
+    impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details>
+    {
         /// Access the current asynchronous operation status
-        fn status(&mut self) -> &::status::AsyncOpStatus<StatusDetails>;
+        fn status(&self) -> AsyncOpStatus<Details> {
+            (*self.shared.status.lock().unwrap()).clone()
+        }
+
+        /// Wait for a status update or a final status
+        fn wait(&self) -> AsyncOpStatus<Details> {
+            // Read the current operation status
+            let mut status_lock = self.shared.status.lock().unwrap();
+            match *status_lock {
+                // If the status can still change, wait for a status update
+                Pending(_) | Running(_)  => {
+                    let wait_result = self.shared.update_cv.wait(status_lock);
+                    status_lock = wait_result.unwrap();
+                }
+                // Otherwise, we'll just return the final status
+                Done(_) | Cancelled(_) | Error(_) => {}
+            }
+            (*status_lock).clone()
+        }
+    }
+
+
+    /// State shared between the client and the server
+    struct SharedState<Details: AsyncOpStatusDetails> {
+        status: Mutex<AsyncOpStatus<Details>>,
+        update_cv: Condvar,
+    }
+    //
+    impl<Details: AsyncOpStatusDetails> SharedState<Details> {
+        /// Construct the shared state with some initial status
+        fn new(initial: AsyncOpStatus<Details>) -> SharedState<Details> {
+            SharedState {
+                status: Mutex::new(initial),
+                update_cv: Condvar::new(),
+            }
+        }
     }
 }
 
@@ -68,7 +153,7 @@ mod status {
 
 
     /// Implementation-specific details on the status of asynchronous operations
-    pub trait AsyncOpStatusDetails {
+    pub trait AsyncOpStatusDetails: Clone {
         /// Details on the status of pending operations
         ///
         /// Possible usage: Represent OpenCL's distinction between a command
