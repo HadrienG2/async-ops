@@ -138,8 +138,8 @@ mod locked {
     impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
-            // This should only be run if we have not yet reached a final status
-            debug_assert!(!self.reached_final_status);
+            // This should only happen if we have not yet reached a final status
+            assert!(!self.reached_final_status);
             self.reached_final_status = status::is_final(&status);
 
             // Update the value of the asynchronous operation status
@@ -340,7 +340,7 @@ mod status {
     impl AsyncOpStatusTraits for NoDetails {}
 
 
-    /// Fully standard asynchronous operation status, without any detail
+    /// Fully standard asynchronous operation statuses, without any detail
     pub type StandardAsyncOpStatus = AsyncOpStatus<NoDetails>;
     //
     pub const PENDING: StandardAsyncOpStatus =
