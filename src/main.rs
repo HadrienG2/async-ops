@@ -24,10 +24,14 @@ extern crate triple_buffer;
 ///
 mod lockfree {
     use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
     use triple_buffer::{TripleBufferInput, TripleBufferOutput};
 
 
     // TODO: Add asynchronous operation object
+    // TODO: Make callback execution configurable using executors, rather than
+    //       running them synchronously on the server.
 
 
     /// Server interface, used to submit status updates
@@ -39,7 +43,8 @@ mod lockfree {
         /// and will not change anymore
         reached_final_status: bool,
 
-        // TODO: Add support for client callbacks
+        /// Client callback to be invoked whenever the operation status changes
+        callback: Arc<AtomicBox<Fn(AsyncOpStatus<Details>)>>,
     }
     //
     impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
@@ -52,7 +57,9 @@ mod lockfree {
             // Update the value of the asynchronous operation status
             self.buf_input.write(status);
 
-            // TODO: Notify the reader that an update has occured
+            // Notify the reader that an update has occured
+            let callback = self.callback.load_ref(Ordering::Relaxed); 
+            callback(status);
         }
     }
     //
@@ -72,7 +79,8 @@ mod lockfree {
         /// Current operation status will be read through this triple buffer
         buf_output: TripleBufferOutput<AsyncOpStatus<Details>>,
 
-        // TODO: Add support for client callbacks
+        /// Accessor to the server's client callback hook
+        callback: Arc<AtomicBox<Fn(AsyncOpStatus<Details>)>>,
     }
     //
     impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
@@ -81,7 +89,11 @@ mod lockfree {
             self.buf_output.read()
         }
 
-        // TODO: Add support for client callbacks
+        /// Set a callback to be invoked immediately, then after each time the
+        /// asynchronous operation's status is updated. Consumes the client.
+        pub fn set_callback<F: Fn(AsyncOpStatus<Details>)>(self, f: F) {
+            self.callback.store(Box::new(f));
+        }
     }
 
 
