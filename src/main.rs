@@ -86,9 +86,7 @@ mod lockfree {
 /// updates in the rare situations where this is desired.
 ///
 mod locked {
-    use status::{AsyncOpStatus, AsyncOpStatusDetails};
-    use status::AsyncOpStatus::*;
-    use status::AsyncOpError::*;
+    use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
     use std::sync::{Arc, Mutex, Condvar};
 
     /// Asynchronous operation object
@@ -110,7 +108,10 @@ mod locked {
 
             // ...then build the client and server
             AsyncOp {
-                server: AsyncOpServer { shared: shared_state.clone() },
+                server: AsyncOpServer {
+                    shared: shared_state.clone(),
+                    reached_final_status: false,
+                },
                 client: AsyncOpClient { shared: shared_state },
             }
         }
@@ -126,13 +127,18 @@ mod locked {
     /// Server interface, used to submit status updates
     pub struct AsyncOpServer<Details: AsyncOpStatusDetails> {
         shared: Arc<SharedState<Details>>,
+        reached_final_status: bool,
     }
     //
     impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details>
     {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
-            // TODO: Check that we do not submit a final status twice
+            // This should only be run if we have not yet reached a final status
+            debug_assert!(!self.reached_final_status);
+
+            // Check if we're reaching such a state right now
+            self.reached_final_status = status::is_final(&status);
 
             // Update the value of the asynchronous operation status
             *self.shared.status.lock().unwrap() = status;
@@ -146,15 +152,8 @@ mod locked {
         /// If the server is killed before the operation has reached its final
         /// status, notify the client in order to prevent hangs
         fn drop(&mut self) {
-            // Check the final operation status
-            let final_status = (*self.shared.status.lock().unwrap()).clone();
-            match final_status {
-                // Report early server exit as an error
-                Pending(_) | Running(_)  => {
-                    self.update(AsyncOpStatus::Error(ServerKilled));
-                }
-                // Otherwise, do nothing: everything is normal
-                Done(_) | Cancelled(_) | Error(_) => {}
+            if !self.reached_final_status {
+                self.update(AsyncOpStatus::Error(AsyncOpError::ServerKilled));
             }
         }
     }
@@ -176,15 +175,14 @@ mod locked {
         pub fn wait(&self) -> AsyncOpStatus<Details> {
             // Read the current operation status
             let mut status_lock = self.shared.status.lock().unwrap();
-            match *status_lock {
-                // If the status can still change, wait for a status update
-                Pending(_) | Running(_)  => {
-                    let wait_result = self.shared.update_cv.wait(status_lock);
-                    status_lock = wait_result.unwrap();
-                }
-                // Otherwise, return the final operation status
-                Done(_) | Cancelled(_) | Error(_) => {}
+
+            // Only wait if the status can still change
+            if !status::is_final(&*status_lock) {
+                let wait_result = self.shared.update_cv.wait(status_lock);
+                status_lock = wait_result.unwrap();
             }
+
+            // Return the final operation status
             (*status_lock).clone()
         }
     }
@@ -243,6 +241,18 @@ mod status {
     //
     impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
         for AsyncOpStatus<Details> {}
+
+
+    /// Check if an asynchronous operation status is final
+    pub fn is_final<Details: AsyncOpStatusDetails>(
+        s: &AsyncOpStatus<Details>
+    ) -> bool {
+        use self::AsyncOpStatus::*;
+        match *s {
+            Pending(_) | Running (_) => false,
+            Done(_) | Cancelled(_) | Error(_) => true,
+        }
+    }
 
 
     /// Asynchronous operation errors are described through the following enum
