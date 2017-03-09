@@ -43,6 +43,8 @@ mod lockfree {
     {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
+            // TODO: Check that we do not submit a final state twice
+
             // Update the value of the asynchronous operation status
             self.buf_input.write(status);
 
@@ -130,6 +132,8 @@ mod locked {
     {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
+            // TODO: Check that we do not submit a final status twice
+
             // Update the value of the asynchronous operation status
             *self.shared.status.lock().unwrap() = status;
 
