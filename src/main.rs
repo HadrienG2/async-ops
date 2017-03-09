@@ -7,6 +7,9 @@
 extern crate triple_buffer;
 
 
+// TODO: Think about interface commonalities between locked and lock-free
+//       implementations of asynchronous operations.
+
 /// Lock-free implementation of asynchronous operations
 ///
 /// This implementation of the asynchronous operation concept is based on a
@@ -19,20 +22,49 @@ mod lockfree {
     use status::{AsyncOpStatus, AsyncOpStatusDetails};
     use triple_buffer::{TripleBufferInput, TripleBufferOutput};
 
+
+    // TODO: Add asynchronous operation object
+
+
     /// Server interface, used to submit status updates
     pub struct AsyncOpServer<Details: AsyncOpStatusDetails> {
         /// Status updates will be submitted through this triple buffer
         buf_input: TripleBufferInput<AsyncOpStatus<Details>>,
 
-        // TODO: Add callback support
+        // TODO: Add support for detector early exit detection (a bool?)
+        // TODO: Add support for client callbacks
     }
+    //
+    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details>
+    {
+        /// Submit an asynchronous operation status update
+        pub fn update(&mut self, status: AsyncOpStatus<Details>) {
+            // Update the value of the asynchronous operation status
+            self.buf_input.write(status);
+
+            // TODO: Notify the reader that an update has occured
+        }
+    }
+    //
+    // TODO: Add detection of server early exit
+
 
     /// Client interface, used to synchronize with the operation status
     pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
         /// Current operation status will be read through this triple buffer
         buf_output: TripleBufferOutput<AsyncOpStatus<Details>>,
 
-        // TODO: Add callback support
+        // TODO: Add support for client callbacks
+    }
+    //
+    impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details>
+    {
+        /// Access the current asynchronous operation status
+        pub fn status(&mut self) -> &AsyncOpStatus<Details> {
+            self.buf_output.read()
+        }
+
+        // TODO: Add support for client callbacks
     }
 }
 
