@@ -7,8 +7,8 @@
 extern crate triple_buffer;
 
 
-// TODO: Think about interface commonalities between locked and lock-free
-//       implementations of asynchronous operations.
+// TODO: Think about interface and implementation commonalities between locked
+//       and lock-free implementations of asynchronous operations.
 
 
 // TODO: Extract independent concepts to dedicated code modules.
@@ -23,7 +23,7 @@ extern crate triple_buffer;
 /// improved performance at the cost of a less natural coding style.
 ///
 mod lockfree {
-    use status::{AsyncOpStatus, AsyncOpStatusDetails};
+    use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
     use triple_buffer::{TripleBufferInput, TripleBufferOutput};
 
 
@@ -35,14 +35,19 @@ mod lockfree {
         /// Status updates will be submitted through this triple buffer
         buf_input: TripleBufferInput<AsyncOpStatus<Details>>,
 
-        // TODO: Add support for detector early exit detection (a bool?)
+        /// Flag indicating that the operation status has reached a final state
+        /// and will not change anymore
+        reached_final_status: bool,
+
         // TODO: Add support for client callbacks
     }
     //
     impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
-            // TODO: Check that we do not submit a final state twice
+            // This should only happen if we have not yet reached a final status
+            assert!(!self.reached_final_status);
+            self.reached_final_status = status::is_final(&status);
 
             // Update the value of the asynchronous operation status
             self.buf_input.write(status);
@@ -51,7 +56,15 @@ mod lockfree {
         }
     }
     //
-    // TODO: Add detection of server early exit
+    impl<Details: AsyncOpStatusDetails> Drop for AsyncOpServer<Details> {
+        /// If the server is killed before the operation has reached its final
+        /// status, notify the client in order to prevent hangs
+        fn drop(&mut self) {
+            if !self.reached_final_status {
+                self.update(AsyncOpStatus::Error(AsyncOpError::ServerKilled));
+            }
+        }
+    }
 
 
     /// Client interface, used to synchronize with the operation status
