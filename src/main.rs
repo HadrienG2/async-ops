@@ -24,8 +24,6 @@ extern crate triple_buffer;
 ///
 mod lockfree {
     use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
-    use std::sync::Arc;
-    use std::sync::atomic::Ordering;
     use triple_buffer::{TripleBufferInput, TripleBufferOutput};
 
 
@@ -85,14 +83,14 @@ mod lockfree {
 }
 
 
-/// Lock-based implementation of asynchronous operations
+/// Blocking implementation of asynchronous operation monitoring
 ///
 /// This implementation of the asynchronous operation concept uses a mutex to
 /// synchronize access to the operation status. This limits the maximal
 /// performance that can be achieved, but allows a client to wait for a status
-/// updates in the rare situations where this is desired.
+/// updates in situations where this is desired.
 ///
-mod locked {
+mod blocking {
     use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
     use std::sync::{Arc, Mutex, Condvar};
 
@@ -111,7 +109,12 @@ mod locked {
             // Start with the shared state...
             let shared_state = Arc::new(
                 SharedState {
-                    status: Mutex::new(initial),
+                    status_lock: Mutex::new(
+                        StatusWithDirtyBit {
+                            status: initial,
+                            read: false,
+                        }
+                    ),
                     update_cv: Condvar::new(),
                 }
             );
@@ -152,7 +155,10 @@ mod locked {
             self.reached_final_status = status::is_final(&status);
 
             // Update the value of the asynchronous operation status
-            *self.shared.status.lock().unwrap() = status;
+            *self.shared.status_lock.lock().unwrap() = StatusWithDirtyBit {
+                status: status,
+                read: false
+            };
 
             // Notify the reader that an update has occured
             self.shared.update_cv.notify_all();
@@ -177,24 +183,27 @@ mod locked {
     }
     //
     impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
-        /// Access the current asynchronous operation status
+        /// Clone the current asynchronous operation status
         pub fn status(&self) -> AsyncOpStatus<Details> {
-            (*self.shared.status.lock().unwrap()).clone()
+            (*self.shared.status_lock.lock().unwrap()).status.clone()
         }
 
         /// Wait for either a status update or a final operation status
         pub fn wait(&self) -> AsyncOpStatus<Details> {
-            // Read the current operation status
-            let mut status_lock = self.shared.status.lock().unwrap();
+            // Access the current operation status
+            let mut lock = self.shared.status_lock.lock().unwrap();
 
-            // Only wait if the operation status can still change
-            if !status::is_final(&*status_lock) {
-                let wait_result = self.shared.update_cv.wait(status_lock);
-                status_lock = wait_result.unwrap();
+            // Only wait if the current status was read and can still change
+            if lock.read && !status::is_final(&lock.status) {
+                let wait_result = self.shared.update_cv.wait(lock);
+                lock = wait_result.unwrap();
             }
+            
+            // Mark the current operation status as read
+            lock.read = true;
 
             // Return the final operation status
-            (*status_lock).clone()
+            lock.status.clone()
         }
     }
 
@@ -202,10 +211,18 @@ mod locked {
     /// State shared between the client and the server
     struct SharedState<Details: AsyncOpStatusDetails> {
         /// Current asynchronous operation status (mutex-protected)
-        status: Mutex<AsyncOpStatus<Details>>,
+        status_lock: Mutex<StatusWithDirtyBit<Details>>,
 
         /// Condition variable used to notify clients about status updates
         update_cv: Condvar,
+    }
+    //
+    struct StatusWithDirtyBit<Details: AsyncOpStatusDetails> {
+        /// Current asynchronous operation status
+        status: AsyncOpStatus<Details>,
+
+        /// Whether this version of the status was read by the client
+        read: bool,
     }
 
 
@@ -375,7 +392,7 @@ mod status {
 
 fn main() {
     // Create an asynchronous operation
-    let op = locked::AsyncOp::new(status::PENDING);
+    let op = blocking::AsyncOp::new(status::PENDING);
 
     // Split it into a client and a server
     let (op_server, op_client) = op.split();
