@@ -281,6 +281,18 @@ mod server {
             (self.updater)(status);
         }
     }
+    //
+    impl<StatusDetails: AsyncOpStatusDetails,
+         UpdateFunctor: FnMut(AsyncOpStatus<StatusDetails>)>
+    Drop for AsyncOpServer<StatusDetails, UpdateFunctor> {
+        /// If the server is killed before the operation has reached its final
+        /// status, notify the client in order to prevent hangs
+        fn drop(&mut self) {
+            if !self.reached_final_status {
+                self.update(AsyncOpStatus::Error(AsyncOpError::ServerKilled));
+            }
+        }
+    }
 }
 
 
