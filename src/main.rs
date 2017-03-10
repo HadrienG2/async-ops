@@ -14,22 +14,19 @@ extern crate triple_buffer;
 // TODO: Extract independent concepts to dedicated code modules.
 
 
-/// Lock-free implementation of asynchronous operations
+/// Polling implementation of asynchronous operation monitoring
 ///
 /// This implementation of the asynchronous operation concept is based on a
-/// triple buffer. It does not allow waiting for updates (which is racey and
-/// bad for performance anyway), instead relying on an asynchronous callback
-/// mechanism to notify the client about status updates. This allows much
-/// improved performance at the cost of a less natural coding style.
+/// triple buffer. It does not allow waiting for updates, instead only allowing
+/// the client to periodically poll the current operation status. This may be
+/// the most efficient option for frequently updated operation statuses.
 ///
-mod lockfree {
+mod polling {
     use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
     use triple_buffer::{TripleBufferInput, TripleBufferOutput};
 
 
     // TODO: Add asynchronous operation object
-    // TODO: Make callback execution configurable using executors, rather than
-    //       running them synchronously on the server.
 
 
     /// Server interface, used to submit status updates
@@ -105,13 +102,16 @@ mod blocking {
     //
     impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
         /// Create a new asynchronous operation object with some initial status
-        pub fn new(initial: AsyncOpStatus<Details>) -> Self {
+        pub fn new(initial_status: AsyncOpStatus<Details>) -> Self {
+            // Check whether the initial status is already a final status
+            let initial_status_is_final = status::is_final(&initial_status);
+
             // Start with the shared state...
             let shared_state = Arc::new(
                 SharedState {
                     status_lock: Mutex::new(
                         StatusWithDirtyBit {
-                            status: initial,
+                            status: initial_status,
                             read: false,
                         }
                     ),
@@ -123,7 +123,7 @@ mod blocking {
             AsyncOp {
                 server: AsyncOpServer {
                     shared: shared_state.clone(),
-                    reached_final_status: false,
+                    reached_final_status: initial_status_is_final,
                 },
                 client: AsyncOpClient { shared: shared_state },
             }
@@ -227,6 +227,60 @@ mod blocking {
 
 
     // TODO: Add tests and benchmarks
+}
+
+
+/// General implementation of an asynchronous operation server
+///
+/// This is a fully general implementation of an asynchronous operation server,
+/// suitable no matter which server-side behavior is desired by the client.
+/// However, the raw abstraction should not be directly exposed to clients, as
+/// it would allow arbitrary server code injection.
+///
+mod server {
+    use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
+    use std::marker::PhantomData;
+
+    /// Server interface, used to submit status updates
+    pub struct AsyncOpServer<
+        StatusDetails: AsyncOpStatusDetails,
+        UpdateFunctor: FnMut(AsyncOpStatus<StatusDetails>)
+    > {
+        /// Functor that propagates a status update to the client
+        updater: UpdateFunctor,
+
+        /// Flag indicating that the operation status has reached a final state
+        /// and will not change anymore
+        reached_final_status: bool,
+
+        /// This is needed to silence an incorrect occurence of error E0392
+        /// in current version of the rustc compiler
+        status_detail_type: PhantomData<StatusDetails>,
+    }
+    //
+    impl<StatusDetails: AsyncOpStatusDetails,
+         UpdateFunctor: FnMut(AsyncOpStatus<StatusDetails>)>
+    AsyncOpServer<StatusDetails, UpdateFunctor> {
+        /// Create a new server interface with some initial status
+        fn new(updater: UpdateFunctor,
+               initial_status: &AsyncOpStatus<StatusDetails>) -> Self {
+            AsyncOpServer {
+                updater: updater,
+                reached_final_status: status::is_final(initial_status),
+                status_detail_type: PhantomData,
+            }
+        }
+
+        /// Update the current status of the asynchronous operation
+        pub fn update(&mut self, status: AsyncOpStatus<StatusDetails>) {
+            // This should only happen if we have not yet reached a final status
+            debug_assert!(!self.reached_final_status);
+            self.reached_final_status = status::is_final(&status);
+
+            // Propagate the new operation status
+            (self.updater)(status);
+        }
+    }
 }
 
 
