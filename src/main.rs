@@ -7,57 +7,60 @@
 extern crate triple_buffer;
 
 
-// TODO: Think about interface and implementation commonalities between locked
-//       and lock-free implementations of asynchronous operations.
-
-
 // TODO: Extract independent concepts to dedicated code modules.
 
 
-/// Polling implementation of asynchronous operation monitoring
+/// Lock-free polling implementation of asynchronous operation monitoring
 ///
 /// This implementation of the asynchronous operation concept is based on a
 /// triple buffer. It does not allow waiting for updates, instead only allowing
-/// the client to periodically poll the current operation status. This may be
+/// the client to periodically poll the current operation status. But it may be
 /// the most efficient option for frequently updated operation statuses.
 ///
 mod polling {
-    use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
-    use triple_buffer::{TripleBufferInput, TripleBufferOutput};
+    use server::AsyncOpServer;
+    use status::{AsyncOpStatus, AsyncOpStatusDetails};
+    use triple_buffer::{TripleBuffer, TripleBufferOutput};
 
 
-    // TODO: Add asynchronous operation object
+    /// Asynchronous operation object
+    pub struct AsyncOp<StatusDetails: AsyncOpStatusDetails + 'static> {
+        /// Server interface used to submit status updates
+        server: AsyncOpServer<StatusDetails>,
 
-
-    /// Server interface, used to submit status updates
-    pub struct AsyncOpServer<Details: AsyncOpStatusDetails> {
-        /// Status updates will be submitted through this triple buffer
-        buf_input: TripleBufferInput<AsyncOpStatus<Details>>,
-
-        /// Flag indicating that the operation status has reached a final state
-        /// and will not change anymore
-        reached_final_status: bool,
+        /// Client interface used to monitor the operation status
+        client: AsyncOpClient<StatusDetails>,
     }
     //
-    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
-        /// Submit an asynchronous operation status update
-        pub fn update(&mut self, status: AsyncOpStatus<Details>) {
-            // This should only happen if we have not yet reached a final status
-            debug_assert!(!self.reached_final_status);
-            self.reached_final_status = status::is_final(&status);
+    impl<StatusDetails: AsyncOpStatusDetails + 'static> AsyncOp<StatusDetails> {
+        /// Create a new asynchronous operation object with some initial status
+        pub fn new(initial_status: AsyncOpStatus<StatusDetails>) -> Self {
+            // Keep a copy of the initial operation status
+            let initial_status_copy = initial_status.clone();
 
-            // Update the value of the asynchronous operation status
-            self.buf_input.write(status);
-        }
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> Drop for AsyncOpServer<Details> {
-        /// If the server is killed before the operation has reached its final
-        /// status, notify the client in order to prevent hangs
-        fn drop(&mut self) {
-            if !self.reached_final_status {
-                self.update(AsyncOpStatus::Error(AsyncOpError::ServerKilled));
+            // Setup the client/server communication channel
+            let buffer = TripleBuffer::new(initial_status);
+            let (mut buf_input, buf_output) = buffer.split();
+
+            // ...then build the server-side update hook...
+            let updater = move | status: AsyncOpStatus<StatusDetails> | {
+                // Update the value of the asynchronous operation status
+                buf_input.write(status);
+            };
+
+            // ...then build the client and server
+            AsyncOp {
+                server: ::server::AsyncOpServer::new(updater,
+                                                     &initial_status_copy),
+                client: AsyncOpClient { buf_output: buf_output },
             }
+        }
+
+        /// Split the asynchronous operation object into client and server
+        /// objects which can be respectively sent to client and server threads
+        pub fn split(self) -> (AsyncOpServer<StatusDetails>,
+                               AsyncOpClient<StatusDetails>) {
+            (self.server, self.client)
         }
     }
 
@@ -107,7 +110,7 @@ mod blocking {
             // Keep a copy of the initial operation status
             let initial_status_copy = initial_status.clone();
 
-            // Start with the shared state...
+            // Start by building the shared state...
             let shared_state = Arc::new(
                 SharedState {
                     status_lock: Mutex::new(
@@ -136,7 +139,7 @@ mod blocking {
             // ...then build the client and server
             AsyncOp {
                 server: ::server::AsyncOpServer::new(updater,
-                                                     &initial_status_copy),
+                                                      &initial_status_copy),
                 client: AsyncOpClient { shared: shared_state },
             }
         }
@@ -165,19 +168,19 @@ mod blocking {
         /// Wait for either a status update or a final operation status
         pub fn wait(&self) -> AsyncOpStatus<Details> {
             // Access the current operation status
-            let mut lock = self.shared.status_lock.lock().unwrap();
+            let mut status_lock = self.shared.status_lock.lock().unwrap();
 
             // Only wait if the current status was read and can still change
-            if lock.read && !status::is_final(&lock.status) {
-                let wait_result = self.shared.update_cv.wait(lock);
-                lock = wait_result.unwrap();
+            if status_lock.read && !status::is_final(&status_lock.status) {
+                let wait_result = self.shared.update_cv.wait(status_lock);
+                status_lock = wait_result.unwrap();
             }
             
             // Mark the current operation status as read
-            lock.read = true;
+            status_lock.read = true;
 
             // Return the final operation status
-            lock.status.clone()
+            status_lock.status.clone()
         }
     }
 
@@ -256,6 +259,9 @@ mod server {
             }
         }
     }
+
+
+    // TODO: Add tests and benchmarks
 }
 
 
