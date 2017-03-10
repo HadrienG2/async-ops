@@ -42,24 +42,17 @@ mod lockfree {
         /// Flag indicating that the operation status has reached a final state
         /// and will not change anymore
         reached_final_status: bool,
-
-        /// Client callback to be invoked whenever the operation status changes
-        callback: Arc<AtomicBox<Fn(AsyncOpStatus<Details>)>>,
     }
     //
     impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
             // This should only happen if we have not yet reached a final status
-            assert!(!self.reached_final_status);
+            debug_assert!(!self.reached_final_status);
             self.reached_final_status = status::is_final(&status);
 
             // Update the value of the asynchronous operation status
             self.buf_input.write(status);
-
-            // Notify the reader that an update has occured
-            let callback = self.callback.load_ref(Ordering::Relaxed); 
-            callback(status);
         }
     }
     //
@@ -78,21 +71,12 @@ mod lockfree {
     pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
         /// Current operation status will be read through this triple buffer
         buf_output: TripleBufferOutput<AsyncOpStatus<Details>>,
-
-        /// Accessor to the server's client callback hook
-        callback: Arc<AtomicBox<Fn(AsyncOpStatus<Details>)>>,
     }
     //
     impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
         /// Access the current asynchronous operation status
         pub fn status(&mut self) -> &AsyncOpStatus<Details> {
             self.buf_output.read()
-        }
-
-        /// Set a callback to be invoked immediately, then after each time the
-        /// asynchronous operation's status is updated. Consumes the client.
-        pub fn set_callback<F: Fn(AsyncOpStatus<Details>)>(self, f: F) {
-            self.callback.store(Box::new(f));
         }
     }
 
@@ -164,7 +148,7 @@ mod locked {
         /// Submit an asynchronous operation status update
         pub fn update(&mut self, status: AsyncOpStatus<Details>) {
             // This should only happen if we have not yet reached a final status
-            assert!(!self.reached_final_status);
+            debug_assert!(!self.reached_final_status);
             self.reached_final_status = status::is_final(&status);
 
             // Update the value of the asynchronous operation status
