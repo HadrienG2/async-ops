@@ -88,11 +88,12 @@ mod polling {
 /// updates in situations where this is desired.
 ///
 mod blocking {
-    use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
+    use server::AsyncOpServer;
+    use status::{self, AsyncOpStatus, AsyncOpStatusDetails};
     use std::sync::{Arc, Mutex, Condvar};
 
     /// Asynchronous operation object
-    pub struct AsyncOp<StatusDetails: AsyncOpStatusDetails> {
+    pub struct AsyncOp<StatusDetails: AsyncOpStatusDetails + 'static> {
         /// Server interface used to submit status updates
         server: AsyncOpServer<StatusDetails>,
 
@@ -100,11 +101,11 @@ mod blocking {
         client: AsyncOpClient<StatusDetails>,
     }
     //
-    impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
+    impl<StatusDetails: AsyncOpStatusDetails + 'static> AsyncOp<StatusDetails> {
         /// Create a new asynchronous operation object with some initial status
-        pub fn new(initial_status: AsyncOpStatus<Details>) -> Self {
-            // Check whether the initial status is already a final status
-            let initial_status_is_final = status::is_final(&initial_status);
+        pub fn new(initial_status: AsyncOpStatus<StatusDetails>) -> Self {
+            // Keep a copy of the initial operation status
+            let initial_status_copy = initial_status.clone();
 
             // Start with the shared state...
             let shared_state = Arc::new(
@@ -119,59 +120,32 @@ mod blocking {
                 }
             );
 
+            // ...then build the server-side update hook...
+            let server_shared = shared_state.clone();
+            let updater = move | status: AsyncOpStatus<StatusDetails> | {
+                // Update the value of the asynchronous operation status
+                *server_shared.status_lock
+                              .lock()
+                              .unwrap() = StatusWithDirtyBit { status: status,
+                                                               read: false };
+
+                // Notify the reader that an update has occured
+                server_shared.update_cv.notify_all();
+            };
+
             // ...then build the client and server
             AsyncOp {
-                server: AsyncOpServer {
-                    shared: shared_state.clone(),
-                    reached_final_status: initial_status_is_final,
-                },
+                server: ::server::AsyncOpServer::new(updater,
+                                                     &initial_status_copy),
                 client: AsyncOpClient { shared: shared_state },
             }
         }
 
         /// Split the asynchronous operation object into client and server
         /// objects which can be respectively sent to client and server threads
-        pub fn split(self) -> (AsyncOpServer<Details>, AsyncOpClient<Details>) {
+        pub fn split(self) -> (AsyncOpServer<StatusDetails>,
+                               AsyncOpClient<StatusDetails>) {
             (self.server, self.client)
-        }
-    }
-
-
-    /// Server interface, used to submit status updates
-    pub struct AsyncOpServer<Details: AsyncOpStatusDetails> {
-        /// Reference-counted shared state
-        shared: Arc<SharedState<Details>>,
-
-        /// Flag indicating that the operation status has reached a final state
-        /// and will not change anymore
-        reached_final_status: bool,
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
-        /// Submit an asynchronous operation status update
-        pub fn update(&mut self, status: AsyncOpStatus<Details>) {
-            // This should only happen if we have not yet reached a final status
-            debug_assert!(!self.reached_final_status);
-            self.reached_final_status = status::is_final(&status);
-
-            // Update the value of the asynchronous operation status
-            *self.shared.status_lock.lock().unwrap() = StatusWithDirtyBit {
-                status: status,
-                read: false
-            };
-
-            // Notify the reader that an update has occured
-            self.shared.update_cv.notify_all();
-        }
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> Drop for AsyncOpServer<Details> {
-        /// If the server is killed before the operation has reached its final
-        /// status, notify the client in order to prevent hangs
-        fn drop(&mut self) {
-            if !self.reached_final_status {
-                self.update(AsyncOpStatus::Error(AsyncOpError::ServerKilled));
-            }
         }
     }
 
@@ -239,40 +213,31 @@ mod blocking {
 ///
 mod server {
     use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
-    use std::marker::PhantomData;
 
     /// Server interface, used to submit status updates
-    pub struct AsyncOpServer<
-        StatusDetails: AsyncOpStatusDetails,
-        UpdateFunctor: FnMut(AsyncOpStatus<StatusDetails>)
-    > {
+    pub struct AsyncOpServer<Details: AsyncOpStatusDetails> {
         /// Functor that propagates a status update to the client
-        updater: UpdateFunctor,
+        updater: Box<FnMut(AsyncOpStatus<Details>)>,
 
         /// Flag indicating that the operation status has reached a final state
         /// and will not change anymore
         reached_final_status: bool,
-
-        /// This is needed to silence an incorrect occurence of error E0392
-        /// in current version of the rustc compiler
-        status_detail_type: PhantomData<StatusDetails>,
     }
     //
-    impl<StatusDetails: AsyncOpStatusDetails,
-         UpdateFunctor: FnMut(AsyncOpStatus<StatusDetails>)>
-    AsyncOpServer<StatusDetails, UpdateFunctor> {
+    impl<Details: AsyncOpStatusDetails> AsyncOpServer<Details> {
         /// Create a new server interface with some initial status
-        fn new(updater: UpdateFunctor,
-               initial_status: &AsyncOpStatus<StatusDetails>) -> Self {
+        pub fn new<F>(updater: F,
+                      initial_status: &AsyncOpStatus<Details>) -> Self
+            where F: FnMut(AsyncOpStatus<Details>) + 'static
+        {
             AsyncOpServer {
-                updater: updater,
+                updater: Box::new(updater),
                 reached_final_status: status::is_final(initial_status),
-                status_detail_type: PhantomData,
             }
         }
 
         /// Update the current status of the asynchronous operation
-        pub fn update(&mut self, status: AsyncOpStatus<StatusDetails>) {
+        pub fn update(&mut self, status: AsyncOpStatus<Details>) {
             // This should only happen if we have not yet reached a final status
             debug_assert!(!self.reached_final_status);
             self.reached_final_status = status::is_final(&status);
@@ -282,9 +247,7 @@ mod server {
         }
     }
     //
-    impl<StatusDetails: AsyncOpStatusDetails,
-         UpdateFunctor: FnMut(AsyncOpStatus<StatusDetails>)>
-    Drop for AsyncOpServer<StatusDetails, UpdateFunctor> {
+    impl<Details: AsyncOpStatusDetails> Drop for AsyncOpServer<Details> {
         /// If the server is killed before the operation has reached its final
         /// status, notify the client in order to prevent hangs
         fn drop(&mut self) {
