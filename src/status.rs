@@ -1,16 +1,11 @@
 //! Facilities to represent the status of asynchronous operations
 //!
 //! This package provides facilities to represent and reason about the status
-//! of asynchronous operations. The idea is the following: any kind of async
+//! of asynchronous operations. The model is the following: any kind of async
 //! operation can be represented as a state machine which starts on the client
 //! side in a pending state, is hopefully scheduled and run on the server, goes
 //! through a number of intermediary "running" stats in this process, and
 //! finally ends up in a successful of unsuccessful final state.
-//!
-//! Through this general model and facilities for user customization, we hope
-//! to provide a facility for asynchronous operation monitoring which is
-//! applicable to any kind of asynchronous operation in existence, be it
-//! OpenCL commands, POSIX 1b asynchronous IO, or just your regular future.
 
 use std::error::Error;
 use std::fmt::{self, Debug};
@@ -55,7 +50,7 @@ impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
     for AsyncOpStatus<Details> {}
 
 
-/// Check if an asynchronous operation status is final
+/// Check if an operation status is final (i.e. won't change anymore)
 pub fn is_final<Details: AsyncOpStatusDetails>(
     s: &AsyncOpStatus<Details>
 ) -> bool {
@@ -67,7 +62,7 @@ pub fn is_final<Details: AsyncOpStatusDetails>(
 }
 
 
-/// Asynchronous operation errors are described through the following enum
+/// Support for standard and custom asynchronous operation errors
 #[derive(Clone, Debug, PartialEq)]
 pub enum AsyncOpError<Details: AsyncOpStatusDetails> {
     /// The server was killed before the operation reached a final status
@@ -82,13 +77,11 @@ impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
     for AsyncOpError<Details> {}
 
 
-/// Every component of the asynchronous operation status should follow the
-/// following trait bounds
+/// Trait bounds which every part of the operation status should honor
 pub trait AsyncOpStatusTraits: Clone + Debug + PartialEq + Send {}
 
 
 /// Implementation-specific details on the status of asynchronous operations
-/// are specified through an implementation of the following trait.
 pub trait AsyncOpStatusDetails: AsyncOpStatusTraits {
     /// Details on the status of pending operations
     ///
@@ -99,7 +92,7 @@ pub trait AsyncOpStatusDetails: AsyncOpStatusTraits {
 
     /// Details on the status of running operations
     ///
-    /// Possible usage: Keep the client informed about server's progress.
+    /// Possible usage: Keep the client informed about the server's progress.
     ///
     type RunningDetails: AsyncOpStatusTraits;
 

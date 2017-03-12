@@ -262,8 +262,8 @@ mod server {
         /// and will not change anymore
         reached_final_status: bool,
 
-        /// This crap is needed due to an incorrect occurrence of E0392
-        yes_i_use_details: PhantomData<Details>,
+        /// This hack is needed to silence an undue E0392 compiler error
+        yes_i_do_use_details: PhantomData<Details>,
     }
     //
     impl<Details: AsyncOpStatusDetails,
@@ -275,7 +275,7 @@ mod server {
             GenericAsyncOpServer {
                 updater: status_updater,
                 reached_final_status: status::is_final(initial_status),
-                yes_i_use_details: PhantomData,
+                yes_i_do_use_details: PhantomData,
             }
         }
 
