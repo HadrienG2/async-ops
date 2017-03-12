@@ -460,7 +460,7 @@ mod status {
         AsyncOpStatus::Done(NO_DETAILS);
     pub const CANCELLED: StandardAsyncOpStatus =
         AsyncOpStatus::Cancelled(NO_DETAILS);
-    pub const SERVER_KILLED: StandardAsyncOpStatus =
+    pub const ERROR_SERVER_KILLED: StandardAsyncOpStatus =
         AsyncOpStatus::Error(AsyncOpError::ServerKilled);
     //
     impl AsyncOpStatusDetails for NoDetails {
@@ -491,5 +491,5 @@ fn main() {
 
     // Check final status
     println!("Final operation status is {:?}", op_client.status());
-    assert_eq!(op_client.status(), status::SERVER_KILLED);
+    assert_eq!(op_client.status(), status::ERROR_SERVER_KILLED);
 }
