@@ -2,13 +2,13 @@
 name = "threaded_async_ops"
 version = "0.1.0"
 dependencies = [
- "triple_buffer 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "triple_buffer 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "triple_buffer"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [metadata]
-"checksum triple_buffer 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d002e68918d463268bcc72409bbf34be9c86f1090f589abcdceb74cbc272721e"
+"checksum triple_buffer 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b6732f229db961d3d98f58cd3f23d455093dad5bfb6a516bffb1015aedab1830"
