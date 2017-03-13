@@ -1,256 +1,40 @@
-//! Asynchronous operations (thread backend)
+//! Asynchronous operation monitoring
 //!
-//! This package is part of a long-term plan to build a general backend for the
-//! implementation of asynchronous operations in Rust. As a first step, we'll
-//! try to do it in a multi-threaded setting.
+//! Picture yourself in a situation where: you want to delegate work to another
+//! hardware or software entity, such as a coroutine, a thread pool, a GPU, an
+//! IO device, or even a server over a network. You know that the work is going
+//! to take some time, and you have other things to do meanwhile, so you would
+//! rather not wait for its completion. But you would like a way to monitor the
+//! progress of this work, know when it's done, manage errors...
+//!
+//! Sounds familiar? That's because such asynchronous operations are pervasive
+//! in modern computing. We have hundreds of incompatible abstractions for
+//! dealing with them, each with a subtly different interface and subtly
+//! different implementation trade-offs. Typically, changing the implementation
+//! of an asynchronous operation by moving it to another OS process or piece of
+//! hardware means that you cannot use your favorite abstraction anymore and
+//! must switch all of your code to another asynchronous operation monitoring
+//! abstraction better suited for your new backend.
+//!
+//! But what if there was another way? What if we could have reasonably general
+//! abstractions for representing and monitoring asynchronous operations, that
+//! work in all asynchronous computing settings, with reasonably consistent
+//! ergonomics and optimal performance for the task at hand?
+//!
+//! This crate is an attempt to make this dream come true.
 
 extern crate triple_buffer;
 
+mod multithread;
 mod server;
 mod status;
 
-
-// TODO: Extract independent concepts to dedicated code modules.
-
-
-/// Lock-free polling implementation of asynchronous operation monitoring
-///
-/// This implementation of the asynchronous operation concept is based on a
-/// triple buffer. It does not allow waiting for updates, instead only allowing
-/// the client to periodically poll the current operation status. But it may be
-/// the most efficient option for frequently updated operation statuses.
-///
-mod polling {
-    use server::{GenericAsyncOpServer, AsyncOpServerConfig};
-    use status::{AsyncOpStatus, AsyncOpStatusDetails};
-    use triple_buffer::{TripleBuffer, TripleBufferInput, TripleBufferOutput};
-
-
-    /// Asynchronous operation object
-    pub struct AsyncOp<Details: AsyncOpStatusDetails> {
-        /// Server interface used to submit status updates
-        server: AsyncOpServer<Details>,
-
-        /// Client interface used to monitor the operation status
-        client: AsyncOpClient<Details>,
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
-        /// Create a new asynchronous operation object with some initial status
-        pub fn new(initial_status: AsyncOpStatus<Details>) -> Self {
-            // Keep a copy of the initial operation status
-            let initial_status_copy = initial_status.clone();
-
-            // Setup the client/server communication channel
-            let buffer = TripleBuffer::new(initial_status);
-            let (buf_input, buf_output) = buffer.split();
-
-            // ...then build the client and server
-            AsyncOp {
-                server: GenericAsyncOpServer::new(
-                    PollingServerConfig { buf_input: buf_input },
-                    &initial_status_copy
-                ),
-                client: AsyncOpClient { buf_output: buf_output },
-            }
-        }
-
-        /// Split the asynchronous operation object into client and server
-        /// objects which can be respectively sent to client and server threads
-        pub fn split(self) -> (AsyncOpServer<Details>, AsyncOpClient<Details>) {
-            (self.server, self.client)
-        }
-    }
-
-
-    /// Server interface, used to send operation status updates to the client
-    pub type AsyncOpServer<Details: AsyncOpStatusDetails> =
-        GenericAsyncOpServer<PollingServerConfig<Details>>;
-
-
-    /// Server configuration for polling-based operation monitoring
-    pub struct PollingServerConfig<Details: AsyncOpStatusDetails> {
-        /// New operation statuses will be sent through this triple buffer
-        buf_input: TripleBufferInput<AsyncOpStatus<Details>>,
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
-        for PollingServerConfig<Details>
-    {
-        /// Implementation details of the asynchronous operation status
-        type StatusDetails = Details;
-
-        /// Method used to send a status update to the client
-        fn update(&mut self, status: AsyncOpStatus<Details>) {
-            self.buf_input.write(status);
-        }
-    }
-
-
-    /// Client interface, used to synchronize with the operation status
-    pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
-        /// Current operation status will be read through this triple buffer
-        buf_output: TripleBufferOutput<AsyncOpStatus<Details>>,
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
-        /// Access the current asynchronous operation status
-        pub fn status(&mut self) -> &AsyncOpStatus<Details> {
-            self.buf_output.read()
-        }
-    }
-
-
-    // TODO: Add tests and benchmarks
-}
-
-
-/// Blocking implementation of asynchronous operation monitoring
-///
-/// This implementation of the asynchronous operation concept uses a mutex to
-/// synchronize access to the operation status. This limits the maximal
-/// performance that can be achieved, but allows a client to wait for a status
-/// updates in situations where this is desired.
-///
-mod blocking {
-    use server::{GenericAsyncOpServer, AsyncOpServerConfig};
-    use status::{self, AsyncOpStatus, AsyncOpStatusDetails};
-    use std::sync::{Arc, Mutex, Condvar};
-
-    /// Asynchronous operation object
-    pub struct AsyncOp<Details: AsyncOpStatusDetails> {
-        /// Server interface used to submit status updates
-        server: AsyncOpServer<Details>,
-
-        /// Client interface used to monitor the operation status
-        client: AsyncOpClient<Details>,
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
-        /// Create a new asynchronous operation object with some initial status
-        pub fn new(initial_status: AsyncOpStatus<Details>) -> Self {
-            // Keep a copy of the initial operation status
-            let initial_status_copy = initial_status.clone();
-
-            // Start by building the shared state...
-            let shared_state = Arc::new(
-                SharedState {
-                    status_lock: Mutex::new(
-                        StatusWithReadBit {
-                            status: initial_status,
-                            read: false,
-                        }
-                    ),
-                    update_cv: Condvar::new(),
-                }
-            );
-
-            // ...then build the client and server
-            AsyncOp {
-                server: GenericAsyncOpServer::new(
-                    BlockingServerConfig { shared: shared_state.clone() },
-                    &initial_status_copy
-                ),
-                client: AsyncOpClient { shared: shared_state },
-            }
-        }
-
-        /// Split the asynchronous operation object into client and server
-        /// objects which can be respectively sent to client and server threads
-        pub fn split(self) -> (AsyncOpServer<Details>, AsyncOpClient<Details>) {
-            (self.server, self.client)
-        }
-    }
-
-
-    /// Server interface, used to send operation status updates to the client
-    pub type AsyncOpServer<Details: AsyncOpStatusDetails> =
-        GenericAsyncOpServer<BlockingServerConfig<Details>>;
-
-
-    /// Server configuration for blocking operation monitoring
-    pub struct BlockingServerConfig<Details: AsyncOpStatusDetails> {
-        /// Reference-counted shared state
-        shared: Arc<SharedState<Details>>,
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
-        for BlockingServerConfig<Details>
-    {
-        /// Implementation details of the asynchronous operation status
-        type StatusDetails = Details;
-
-        /// Method used to send a status update to the client
-        fn update(&mut self, status: AsyncOpStatus<Details>) {
-            // Update the value of the asynchronous operation status
-            *self.shared.status_lock
-                        .lock()
-                        .unwrap() = StatusWithReadBit { status: status,
-                                                        read: false };
-
-            // Notify the reader that an update has occured
-            self.shared.update_cv.notify_all();
-        }
-    }
-
-
-    /// Client interface, used to synchronize with the operation status
-    pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
-        /// Reference-counted shared state
-        shared: Arc<SharedState<Details>>,
-    }
-    //
-    impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
-        /// Clone the current asynchronous operation status
-        pub fn status(&self) -> AsyncOpStatus<Details> {
-            (*self.shared.status_lock.lock().unwrap()).status.clone()
-        }
-
-        /// Wait for either a status update or a final operation status
-        pub fn wait(&self) -> AsyncOpStatus<Details> {
-            // Access the current operation status
-            let mut status_lock = self.shared.status_lock.lock().unwrap();
-
-            // Only wait if the current status was read and can still change
-            if status_lock.read && !status::is_final(&status_lock.status) {
-                let wait_result = self.shared.update_cv.wait(status_lock);
-                status_lock = wait_result.unwrap();
-            }
-
-            // Mark the current operation status as read
-            status_lock.read = true;
-
-            // Return the final operation status
-            status_lock.status.clone()
-        }
-    }
-
-
-    /// State shared between the client and the server
-    struct SharedState<Details: AsyncOpStatusDetails> {
-        /// Current asynchronous operation status (mutex-protected)
-        status_lock: Mutex<StatusWithReadBit<Details>>,
-
-        /// Condition variable used to notify clients about status updates
-        update_cv: Condvar,
-    }
-    //
-    struct StatusWithReadBit<Details: AsyncOpStatusDetails> {
-        /// Current asynchronous operation status
-        status: AsyncOpStatus<Details>,
-
-        /// Whether this version of the status was read by the client
-        read: bool,
-    }
-
-
-    // TODO: Add tests and benchmarks
-}
+use multithread::blocking::AsyncOp;
 
 
 fn main() {
     // Create an asynchronous operation
-    let op = blocking::AsyncOp::new(status::PENDING);
+    let op = AsyncOp::new(status::PENDING);
 
     // Split it into a client and a server
     let (op_server, op_client) = op.split();
