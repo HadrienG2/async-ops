@@ -73,8 +73,7 @@ mod tests {
     use status::{StandardAsyncOpStatus, NoDetails};
 
 
-    /// Test that asynchronous operation servers are created in the proper
-    /// initial state
+    /// Check that servers are created in the right initial state
     #[test]
     fn initial_state() {
         // Test initial server state for a non-final status
@@ -97,8 +96,46 @@ mod tests {
     }
 
 
-    // TODO: Add update() test
+    /// Check that the server update() method works correctly
+    #[test]
+    fn correct_updates() {
+        /// Start with a server in the pending state
+        let mut server = GenericAsyncOpServer::new(
+            MockServerConfig::new(status::PENDING),
+            &status::PENDING
+        );
+
+        /// Move it to the running state, check that it works
+        server.update(status::RUNNING);
+        assert_eq!(server.config.last_status, status::RUNNING);
+        assert_eq!(server.config.update_count, 1);
+        assert_eq!(server.reached_final_status, false);
+
+        /// Move it to the done state, check that it works
+        server.update(status::DONE);
+        assert_eq!(server.config.last_status, status::DONE);
+        assert_eq!(server.config.update_count, 2);
+        assert_eq!(server.reached_final_status, true);
+    }
+
+
+    /// Check that trying to updating a final operation status will panic
+    #[test]
+    #[should_panic]
+    fn incorrect_update() {
+        /// Start with a server in a final state
+        let mut server = GenericAsyncOpServer::new(
+            MockServerConfig::new(status::DONE),
+            &status::DONE
+        );
+
+        /// Try to update it to another final state, this should fail
+        server.update(status::ERROR_SERVER_KILLED);
+    }
+
+
     // TODO: Add drop() test
+
 
     /// Mock server config, suitable for unit testing
     struct MockServerConfig {
