@@ -9,7 +9,6 @@
 //! clients, as doing so would allow arbitrary server code injection.
 
 use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
-use std::marker::PhantomData;
 
 
 /// Server interface, used to submit asynchronous operation status updates
