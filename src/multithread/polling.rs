@@ -1,6 +1,6 @@
 //! Polling-based asynchronous operation monitoring
 //!
-//! This crates provides a way to monitor asynchronous operations through
+//! This module provides a way to monitor asynchronous operations through
 //! polling. It provides maximal performance in scenarios where a client does
 //! not need to synchronize with an asynchronous operation, but only to
 //! periodically check its status, as is the case for example when updating
