@@ -1,5 +1,5 @@
 [root]
-name = "threaded_async_ops"
+name = "async_ops"
 version = "0.1.0"
 dependencies = [
  "triple_buffer 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
