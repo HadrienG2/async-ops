@@ -20,7 +20,7 @@ mod status;
 /// the most efficient option for frequently updated operation statuses.
 ///
 mod polling {
-    use server::{GenericAsyncOpServer, AsyncOpUpdater};
+    use server::{GenericAsyncOpServer, AsyncOpServerConfig};
     use status::{AsyncOpStatus, AsyncOpStatusDetails};
     use triple_buffer::{TripleBuffer, TripleBufferInput, TripleBufferOutput};
 
@@ -47,7 +47,7 @@ mod polling {
             // ...then build the client and server
             AsyncOp {
                 server: GenericAsyncOpServer::new(
-                    AsyncOpUpdaterImpl { buf_input: buf_input },
+                    PollingServerConfig { buf_input: buf_input },
                     &initial_status_copy
                 ),
                 client: AsyncOpClient { buf_output: buf_output },
@@ -64,19 +64,22 @@ mod polling {
 
     /// Server interface, used to send operation status updates to the client
     pub type AsyncOpServer<Details: AsyncOpStatusDetails> =
-        GenericAsyncOpServer<Details, AsyncOpUpdaterImpl<Details>>;
+        GenericAsyncOpServer<PollingServerConfig<Details>>;
 
 
-    /// Mechanism through which status updates should be sent to the client
-    pub struct AsyncOpUpdaterImpl<Details: AsyncOpStatusDetails> {
-        /// New operation statuses will be sent through this tripe buffer
+    /// Server configuration for polling-based operation monitoring
+    pub struct PollingServerConfig<Details: AsyncOpStatusDetails> {
+        /// New operation statuses will be sent through this triple buffer
         buf_input: TripleBufferInput<AsyncOpStatus<Details>>,
     }
     //
-    impl<Details: AsyncOpStatusDetails> AsyncOpUpdater<Details>
-        for AsyncOpUpdaterImpl<Details>
+    impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
+        for PollingServerConfig<Details>
     {
-        /// Send a status update to the client
+        /// Implementation details of the asynchronous operation status
+        type StatusDetails = Details;
+
+        /// Method used to send a status update to the client
         fn update(&mut self, status: AsyncOpStatus<Details>) {
             self.buf_input.write(status);
         }
@@ -109,7 +112,7 @@ mod polling {
 /// updates in situations where this is desired.
 ///
 mod blocking {
-    use server::{GenericAsyncOpServer, AsyncOpUpdater};
+    use server::{GenericAsyncOpServer, AsyncOpServerConfig};
     use status::{self, AsyncOpStatus, AsyncOpStatusDetails};
     use std::sync::{Arc, Mutex, Condvar};
 
@@ -132,7 +135,7 @@ mod blocking {
             let shared_state = Arc::new(
                 SharedState {
                     status_lock: Mutex::new(
-                        StatusWithDirtyBit {
+                        StatusWithReadBit {
                             status: initial_status,
                             read: false,
                         }
@@ -144,7 +147,7 @@ mod blocking {
             // ...then build the client and server
             AsyncOp {
                 server: GenericAsyncOpServer::new(
-                    AsyncOpUpdaterImpl { shared: shared_state.clone() },
+                    BlockingServerConfig { shared: shared_state.clone() },
                     &initial_status_copy
                 ),
                 client: AsyncOpClient { shared: shared_state },
@@ -161,25 +164,28 @@ mod blocking {
 
     /// Server interface, used to send operation status updates to the client
     pub type AsyncOpServer<Details: AsyncOpStatusDetails> =
-        GenericAsyncOpServer<Details, AsyncOpUpdaterImpl<Details>>;
+        GenericAsyncOpServer<BlockingServerConfig<Details>>;
 
 
-    /// Mechanism through which status updates should be sent to the client
-    pub struct AsyncOpUpdaterImpl<Details: AsyncOpStatusDetails> {
+    /// Server configuration for blocking operation monitoring
+    pub struct BlockingServerConfig<Details: AsyncOpStatusDetails> {
         /// Reference-counted shared state
         shared: Arc<SharedState<Details>>,
     }
     //
-    impl<Details: AsyncOpStatusDetails> AsyncOpUpdater<Details>
-        for AsyncOpUpdaterImpl<Details>
+    impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
+        for BlockingServerConfig<Details>
     {
-        /// Send a status update to the client
+        /// Implementation details of the asynchronous operation status
+        type StatusDetails = Details;
+
+        /// Method used to send a status update to the client
         fn update(&mut self, status: AsyncOpStatus<Details>) {
             // Update the value of the asynchronous operation status
             *self.shared.status_lock
                         .lock()
-                        .unwrap() = StatusWithDirtyBit { status: status,
-                                                         read: false };
+                        .unwrap() = StatusWithReadBit { status: status,
+                                                        read: false };
 
             // Notify the reader that an update has occured
             self.shared.update_cv.notify_all();
@@ -222,13 +228,13 @@ mod blocking {
     /// State shared between the client and the server
     struct SharedState<Details: AsyncOpStatusDetails> {
         /// Current asynchronous operation status (mutex-protected)
-        status_lock: Mutex<StatusWithDirtyBit<Details>>,
+        status_lock: Mutex<StatusWithReadBit<Details>>,
 
         /// Condition variable used to notify clients about status updates
         update_cv: Condvar,
     }
     //
-    struct StatusWithDirtyBit<Details: AsyncOpStatusDetails> {
+    struct StatusWithReadBit<Details: AsyncOpStatusDetails> {
         /// Current asynchronous operation status
         status: AsyncOpStatus<Details>,
 
@@ -245,56 +251,50 @@ mod blocking {
 ///
 /// This is a fully general implementation of an asynchronous operation server,
 /// suitable no matter which server-side behavior is desired by the client.
-/// However, the raw abstraction should not be directly exposed to clients, as
-/// it would allow arbitrary server code injection.
+/// Not that in general, the raw abstraction should not be directly exposed to
+/// clients, as it would allow arbitrary server code injection.
 ///
 mod server {
     use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
     use std::marker::PhantomData;
 
     /// Server interface, used to submit status updates
-    pub struct GenericAsyncOpServer<Details: AsyncOpStatusDetails,
-                                    StatusUpdater: AsyncOpUpdater<Details>> {
-        /// Configurable mechanism for propagating status updates to the client
-        updater: StatusUpdater,
+    pub struct GenericAsyncOpServer<Configuration: AsyncOpServerConfig> {
+        /// User-configurable server behaviour
+        config: Configuration,
 
         /// Flag indicating that the operation status has reached a final state
-        /// and will not change anymore
+        /// and should not change anymore
         reached_final_status: bool,
-
-        /// This hack is needed to silence an undue E0392 compiler error
-        yes_i_do_use_details: PhantomData<Details>,
     }
     //
-    impl<Details: AsyncOpStatusDetails,
-         StatusUpdater: AsyncOpUpdater<Details>>
-    GenericAsyncOpServer<Details, StatusUpdater> {
+    impl<Config: AsyncOpServerConfig> GenericAsyncOpServer<Config> {
         /// Create a new server interface with some initial status
-        pub fn new(status_updater: StatusUpdater,
-                   initial_status: &AsyncOpStatus<Details>) -> Self {
+        pub fn new(
+            config: Config,
+            initial_status: &AsyncOpStatus<Config::StatusDetails>
+        ) -> Self {
             GenericAsyncOpServer {
-                updater: status_updater,
+                config: config,
                 reached_final_status: status::is_final(initial_status),
-                yes_i_do_use_details: PhantomData,
             }
         }
 
         /// Update the current status of the asynchronous operation
-        pub fn update(&mut self, status: AsyncOpStatus<Details>) {
+        pub fn update(&mut self,
+                      status: AsyncOpStatus<Config::StatusDetails>) {
             // This should only happen if we have not yet reached a final status
             debug_assert!(!self.reached_final_status);
             self.reached_final_status = status::is_final(&status);
 
             // Propagate the new operation status
-            self.updater.update(status);
+            self.config.update(status);
         }
     }
     //
-    impl<Details: AsyncOpStatusDetails,
-         StatusUpdater: AsyncOpUpdater<Details>>
-    Drop for GenericAsyncOpServer<Details, StatusUpdater> {
+    impl<Config: AsyncOpServerConfig> Drop for GenericAsyncOpServer<Config> {
         /// If the server is killed before the operation has reached its final
-        /// status, notify the client in order to prevent hangs
+        /// status, notify the client in order to prevent it from hanging
         fn drop(&mut self) {
             if !self.reached_final_status {
                 self.update(AsyncOpStatus::Error(AsyncOpError::ServerKilled));
@@ -303,11 +303,13 @@ mod server {
     }
 
 
-    /// Configurable parameter of GenericAsyncOpServer specifying how status
-    /// updates should be propagated to the asynchronous operation's client
-    pub trait AsyncOpUpdater<Details: AsyncOpStatusDetails> {
-        /// Send a status update to the client
-        fn update(&mut self, status: AsyncOpStatus<Details>);
+    /// Configurable parameters of GenericAsyncOpServer
+    pub trait AsyncOpServerConfig {
+        /// Implementation details of the asynchronous operation status
+        type StatusDetails: AsyncOpStatusDetails;
+
+        /// Method used to send status updates to the client
+        fn update(&mut self, status: AsyncOpStatus<Self::StatusDetails>);
     }
 
 
