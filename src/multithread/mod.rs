@@ -18,5 +18,5 @@
 
 
 pub mod blocking;
-// TODO: Add callback-based implementation
+pub mod callback;
 pub mod polling;
