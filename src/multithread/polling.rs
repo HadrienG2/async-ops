@@ -86,4 +86,34 @@ impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
 }
 
 
-// TODO: Add tests and benchmarks
+/// Unit tests
+#[cfg(test)]
+mod tests {
+    use multithread::polling::*;
+    use status;
+
+    /// Check the initial state of asynchronous operations
+    #[test]
+    #[allow(unused_variables)]
+    fn initial_state() {
+        // Does the client give out the right status initially?
+        let mut async_op = AsyncOp::new(status::PENDING);
+        assert_eq!(*async_op.client.status(), status::PENDING);
+
+        // Does it still give it out after splitting the client and the server?
+        let (server, mut client) = async_op.split();
+        assert_eq!(*client.status(), status::PENDING);
+    }
+
+    /// Check that status changes propagate correctly from client to server
+    #[test]
+    fn status_propagation() {
+        let async_op = AsyncOp::new(status::PENDING);
+        let (mut server, mut client) = async_op.split();
+        server.update(status::DONE);
+        assert_eq!(*client.status(), status::DONE);
+    }
+}
+
+
+// TODO: Add benchmarks
