@@ -167,12 +167,12 @@ impl AsyncOpStatusDetails for NoDetails {
 /// Unit tests
 #[cfg(test)]
 mod tests {
-    use ::status::*;
+    use status::*;
 
     /// Test that the standard asynchronous operation statuses match their
     /// more general generic cousins
     #[test]
-    fn test_standard_statuses() {
+    fn standard_statuses() {
         // Standard "pending" status
         match PENDING {
             AsyncOpStatus::Pending(_) => {},
