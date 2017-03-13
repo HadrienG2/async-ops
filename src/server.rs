@@ -71,6 +71,8 @@ pub trait AsyncOpServerConfig {
 mod tests {
     use server::*;
     use status::{StandardAsyncOpStatus, NoDetails};
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
 
     /// Check that servers are created in the right initial state
@@ -81,7 +83,7 @@ mod tests {
             MockServerConfig::new(status::PENDING),
             &status::PENDING
         );
-        assert_eq!(pending_server.config.last_status, status::PENDING);
+        assert_eq!(*pending_server.config.last_status.borrow(), status::PENDING);
         assert_eq!(pending_server.config.update_count, 0);
         assert_eq!(pending_server.reached_final_status, false);
 
@@ -90,7 +92,7 @@ mod tests {
             MockServerConfig::new(status::DONE),
             &status::DONE
         );
-        assert_eq!(final_server.config.last_status, status::DONE);
+        assert_eq!(*final_server.config.last_status.borrow(), status::DONE);
         assert_eq!(final_server.config.update_count, 0);
         assert_eq!(final_server.reached_final_status, true);
     }
@@ -107,13 +109,13 @@ mod tests {
 
         /// Move it to the running state, check that it works
         server.update(status::RUNNING);
-        assert_eq!(server.config.last_status, status::RUNNING);
+        assert_eq!(*server.config.last_status.borrow(), status::RUNNING);
         assert_eq!(server.config.update_count, 1);
         assert_eq!(server.reached_final_status, false);
 
         /// Move it to the done state, check that it works
         server.update(status::DONE);
-        assert_eq!(server.config.last_status, status::DONE);
+        assert_eq!(*server.config.last_status.borrow(), status::DONE);
         assert_eq!(server.config.update_count, 2);
         assert_eq!(server.reached_final_status, true);
     }
@@ -134,13 +136,39 @@ mod tests {
     }
 
 
-    // TODO: Add drop() test
+    /// Check that dropping a server is an error if and only if that server's
+    /// associated asynchronous operation still has a non-final status.
+    #[test]
+    fn drop() {
+        // We'll use this reference to keep track of the final operation status
+        let mut final_status_ref: Rc<RefCell<StandardAsyncOpStatus>>;
+
+        // Legitimate drop should work fine
+        {
+            let server = GenericAsyncOpServer::new(
+                MockServerConfig::new(status::DONE),
+                &status::DONE
+            );
+            final_status_ref = server.config.last_status.clone();
+        }
+        assert_eq!(*final_status_ref.borrow(), status::DONE);
+
+        // Dropping an operation with non-final status should be an error
+        {
+            let server = GenericAsyncOpServer::new(
+                MockServerConfig::new(status::RUNNING),
+                &status::RUNNING
+            );
+            final_status_ref = server.config.last_status.clone();
+        }
+        assert_eq!(*final_status_ref.borrow(), status::ERROR_SERVER_KILLED);
+    }
 
 
     /// Mock server config, suitable for unit testing
     struct MockServerConfig {
         /// Last status update sent by the server
-        last_status: StandardAsyncOpStatus,
+        last_status: Rc<RefCell<StandardAsyncOpStatus>>,
 
         /// Number of status updates sent by the server so far
         update_count: i32,
@@ -150,7 +178,7 @@ mod tests {
         /// Create a new instance of the mock
         fn new(initial_status: StandardAsyncOpStatus) -> Self {
             MockServerConfig {
-                last_status: initial_status,
+                last_status: Rc::new(RefCell::new(initial_status)),
                 update_count: 0,
             }
         }
@@ -162,7 +190,7 @@ mod tests {
 
         /// Method used to send status updates to the client
         fn update(&mut self, status: StandardAsyncOpStatus) {
-            self.last_status = status;
+            *self.last_status.borrow_mut() = status;
             self.update_count+= 1;
         }
     }
