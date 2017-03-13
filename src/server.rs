@@ -66,4 +66,67 @@ pub trait AsyncOpServerConfig {
 }
 
 
-// TODO: Add tests
+/// Unit tests
+#[cfg(test)]
+mod tests {
+    use server::*;
+    use status::{StandardAsyncOpStatus, NoDetails};
+
+
+    /// Test that asynchronous operation servers are created in the proper
+    /// initial state
+    #[test]
+    fn initial_state() {
+        // Test initial server state for a non-final status
+        let pending_server = GenericAsyncOpServer::new(
+            MockServerConfig::new(status::PENDING),
+            &status::PENDING
+        );
+        assert_eq!(pending_server.config.last_status, status::PENDING);
+        assert_eq!(pending_server.config.update_count, 0);
+        assert_eq!(pending_server.reached_final_status, false);
+
+        // Test initial server state for a final status
+        let final_server = GenericAsyncOpServer::new(
+            MockServerConfig::new(status::DONE),
+            &status::DONE
+        );
+        assert_eq!(final_server.config.last_status, status::DONE);
+        assert_eq!(final_server.config.update_count, 0);
+        assert_eq!(final_server.reached_final_status, true);
+    }
+
+
+    // TODO: Add update() test
+    // TODO: Add drop() test
+
+    /// Mock server config, suitable for unit testing
+    struct MockServerConfig {
+        /// Last status update sent by the server
+        last_status: StandardAsyncOpStatus,
+
+        /// Number of status updates sent by the server so far
+        update_count: i32,
+    }
+    //
+    impl MockServerConfig {
+        /// Create a new instance of the mock
+        fn new(initial_status: StandardAsyncOpStatus) -> Self {
+            MockServerConfig {
+                last_status: initial_status,
+                update_count: 0,
+            }
+        }
+    }
+    //
+    impl AsyncOpServerConfig for MockServerConfig {
+        /// Implementation details of the asynchronous operation status
+        type StatusDetails = NoDetails;
+
+        /// Method used to send status updates to the client
+        fn update(&mut self, status: StandardAsyncOpStatus) {
+            self.last_status = status;
+            self.update_count+= 1;
+        }
+    }
+}
