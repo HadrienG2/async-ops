@@ -37,7 +37,7 @@ fn main() {
     let op = AsyncOp::new(status::PENDING);
 
     // Split it into a client and a server
-    let (op_server, op_client) = op.split();
+    let (op_server, mut op_client) = op.split();
 
     // Check initial status
     println!("Initial operation status is {:?}", op_client.status());

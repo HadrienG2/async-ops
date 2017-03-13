@@ -93,18 +93,25 @@ pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
 }
 //
 impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
-    /// Clone the current asynchronous operation status
-    pub fn status(&self) -> AsyncOpStatus<Details> {
-        (*self.shared.status_lock.lock().unwrap()).status.clone()
+    /// Access the current operation status and mark it as read
+    pub fn status(&mut self) -> AsyncOpStatus<Details> {
+        // Access the current operation status
+        let mut status_lock = self.shared.status_lock.lock().unwrap();
+
+        // Mark it as read
+        status_lock.read = true;
+
+        // Return a copy of it
+        status_lock.status.clone()
     }
 
     /// Wait for either a status update or a final operation status
-    pub fn wait(&self) -> AsyncOpStatus<Details> {
+    pub fn wait(&mut self) -> AsyncOpStatus<Details> {
         // Access the current operation status
         let mut status_lock = self.shared.status_lock.lock().unwrap();
 
         // Only wait if the current status was read and can still change
-        if status_lock.read && !status::is_final(&status_lock.status) {
+        while status_lock.read && !status::is_final(&status_lock.status) {
             let wait_result = self.shared.update_cv.wait(status_lock);
             status_lock = wait_result.unwrap();
         }
@@ -112,7 +119,7 @@ impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
         // Mark the current operation status as read
         status_lock.read = true;
 
-        // Return the final operation status
+        // Return a copy of the final operation status
         status_lock.status.clone()
     }
 }
@@ -136,4 +143,128 @@ struct StatusWithReadBit<Details: AsyncOpStatusDetails> {
 }
 
 
-// TODO: Add tests and benchmarks
+/// Unit tests
+#[cfg(test)]
+mod tests {
+    use multithread::blocking::*;
+    use status;
+    use std::sync::{Arc, Condvar};
+    use std::thread;
+    use std::time::Duration;
+
+    /// Check the initial state of asynchronous operations
+    #[test]
+    fn initial_state() {
+        // Access the initial value of the operation's shared state
+        let async_op = AsyncOp::new(status::PENDING);
+        let shared_state = async_op.client.shared;
+
+        // Is the initial operation status correct and unread?
+        let status_lock = shared_state.status_lock.lock().unwrap();
+        assert_eq!(status_lock.status, status::PENDING);
+        assert_eq!(status_lock.read, false);
+    }
+
+    /// Check that reading the operation status marks it as read
+    #[test]
+    #[allow(unused_variables)]
+    fn mark_read() {
+        // Check that reading the initial operation status works
+        let async_op = AsyncOp::new(status::RUNNING);
+        let (server, mut client) = async_op.split();
+        assert_eq!(client.status(), status::RUNNING);
+
+        // Check that it marks the operation status as read
+        let status_lock = client.shared.status_lock.lock().unwrap();
+        assert_eq!(status_lock.status, status::RUNNING);
+        assert_eq!(status_lock.read, true);
+    }
+
+    /// Check that writing to the operation status works
+    #[test]
+    fn write() {
+        // Send a status update
+        let async_op = AsyncOp::new(status::PENDING);
+        let (mut server, client) = async_op.split();
+        server.update(status::RUNNING);
+
+        // Check that it marks the operation status as unread
+        let status_lock = client.shared.status_lock.lock().unwrap();
+        assert_eq!(status_lock.status, status::RUNNING);
+        assert_eq!(status_lock.read, false);
+    }
+
+    /// Check that waiting for status changes works
+    #[test]
+    fn wait() {
+        // Create an asynchronous operation
+        let async_op = AsyncOp::new(status::PENDING);
+        let (mut server, mut client) = async_op.split();
+
+        // Since this test involves blocking, we'll need another worker thread.
+        // Setup some shared state so that we can synchronize with it.
+        let shared_state = Arc::new(
+            (Mutex::new(0), Condvar::new())
+        );
+        let worker_shared = shared_state.clone();
+
+        // Create the worker thread, which will do all the waiting
+        let worker = thread::spawn(move || {
+            // Since the initial status is unread, the first wait should
+            // return immediately to the caller
+            let initial_status = client.wait();
+            assert_eq!(initial_status, status::PENDING);
+
+            // Tell the test code that we are still alive
+            *worker_shared.0.lock().unwrap() = 1;
+            worker_shared.1.notify_all();
+
+            // Wait for the next operation status. This wait should block.
+            let new_status = client.wait();
+
+            // Tell the test code when we are done
+            *worker_shared.0.lock().unwrap() = 2;
+            worker_shared.1.notify_all();
+
+            // Return the new operation status to the caller
+            new_status
+        });
+
+        // The worker should be done with its first read quite quickly
+        let wait_result = shared_state.1.wait_timeout(
+            shared_state.0.lock().unwrap(),
+            Duration::from_millis(100)
+        );
+        let (shared_lock, timeout_result) = wait_result.unwrap();
+        assert!(!timeout_result.timed_out());
+        assert_eq!(*shared_lock, 1);
+
+        // Make sure that the worker does wait for a new status
+        let wait_result = shared_state.1.wait_timeout(
+            shared_lock,
+            Duration::from_millis(100)
+        );
+        let (shared_lock, timeout_result) = wait_result.unwrap();
+        assert!(timeout_result.timed_out());
+        assert_eq!(*shared_lock, 1);
+
+        // Send a status update to the worker
+        server.update(status::DONE);
+
+        // Make sure that the worker moves forward properly after that
+        let wait_result = shared_state.1.wait_timeout(
+            shared_lock,
+            Duration::from_millis(100)
+        );
+        let (shared_lock, timeout_result) = wait_result.unwrap();
+        assert!(!timeout_result.timed_out());
+        assert_eq!(*shared_lock, 2);
+
+        // Wait for the worker to complete and check its final status
+        let new_status = worker.join().unwrap();
+        assert_eq!(new_status, status::DONE);
+    }
+}
+
+
+// TODO: Add benchmarks
