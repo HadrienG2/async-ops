@@ -6,8 +6,11 @@
 //! periodically check its status, as is the case for example when updating
 //! progress bars and status graphs in user interfaces.
 
+use client::IAsyncOpClient;
 use server::{self, AsyncOpServerConfig};
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use triple_buffer::{TripleBuffer, TripleBufferInput, TripleBufferOutput};
 
 
@@ -30,13 +33,22 @@ impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
         let buffer = TripleBuffer::new(initial_status);
         let (buf_input, buf_output) = buffer.split();
 
+        // ...and a shared cancellation flag...
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+
         // ...then build the client and server
         AsyncOp {
             server: AsyncOpServer::new(
-                PollingServerConfig { buf_input: buf_input },
+                PollingServerConfig {
+                    buf_input: buf_input,
+                    cancelled: cancel_flag.clone(),
+                },
                 &initial_status_copy
             ),
-            client: AsyncOpClient { buf_output: buf_output },
+            client: AsyncOpClient {
+                buf_output: buf_output,
+                cancelled: cancel_flag,
+            },
         }
     }
 
@@ -57,6 +69,9 @@ pub type AsyncOpServer<Details: AsyncOpStatusDetails> =
 pub struct PollingServerConfig<Details: AsyncOpStatusDetails> {
     /// New operation statuses will be sent through this triple buffer
     buf_input: TripleBufferInput<AsyncOpStatus<Details>>,
+
+    /// In addition, the client & server also share a cancellation flag
+    cancelled: Arc<AtomicBool>,
 }
 //
 impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
@@ -69,6 +84,11 @@ impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
     fn update(&mut self, status: AsyncOpStatus<Details>) {
         self.buf_input.write(status);
     }
+
+    /// Method used to query whether the client has cancelled the operation
+    fn cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
 }
 
 
@@ -76,12 +96,21 @@ impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
 pub struct AsyncOpClient<Details: AsyncOpStatusDetails> {
     /// Current operation status will be read through this triple buffer
     buf_output: TripleBufferOutput<AsyncOpStatus<Details>>,
+
+    /// In addition, the client & server also share a cancellation flag
+    cancelled: Arc<AtomicBool>,
 }
 //
 impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
     /// Access the current asynchronous operation status
     pub fn status(&mut self) -> &AsyncOpStatus<Details> {
         self.buf_output.read()
+    }
+}
+//
+impl<Details: AsyncOpStatusDetails> IAsyncOpClient for AsyncOpClient<Details> {
+    fn cancel(&mut self) {
+        self.cancelled.store(true, Ordering::Release);
     }
 }
 
@@ -103,6 +132,9 @@ mod tests {
         // Does it still give it out after splitting the client and the server?
         let (server, mut client) = async_op.split();
         assert_eq!(*client.status(), status::PENDING);
+
+        // Is the cancellation flag initially unset?
+        assert!(!server.cancelled());
     }
 
     /// Check that status changes propagate correctly from client to server
@@ -112,6 +144,18 @@ mod tests {
         let (mut server, mut client) = async_op.split();
         server.update(status::DONE);
         assert_eq!(*client.status(), status::DONE);
+    }
+
+    /// Check that cancellation works as expected
+    #[test]
+    fn cancelation() {
+        // Create an asynchronous operation
+        let async_op = AsyncOp::new(status::PENDING);
+        let (server, mut client) = async_op.split();
+
+        // Make sure that cancelling it works as expected
+        client.cancel();
+        assert!(server.cancelled());
     }
 }
 

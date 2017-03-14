@@ -43,6 +43,11 @@ impl<Config: AsyncOpServerConfig> AsyncOpServer<Config> {
         // Propagate the new operation status
         self.config.update(status);
     }
+
+    /// Check whether the client has cancelled the operation
+    pub fn cancelled(&self) -> bool {
+        self.config.cancelled()
+    }
 }
 //
 impl<Config: AsyncOpServerConfig> Drop for AsyncOpServer<Config> {
@@ -63,6 +68,9 @@ pub trait AsyncOpServerConfig {
 
     /// Method used to send status updates to the client
     fn update(&mut self, status: AsyncOpStatus<Self::StatusDetails>);
+
+    /// Method used to query whether the client has cancelled the operation
+    fn cancelled(&self) -> bool;
 }
 
 
@@ -192,6 +200,11 @@ mod tests {
         fn update(&mut self, status: StandardAsyncOpStatus) {
             *self.last_status.borrow_mut() = status;
             self.update_count+= 1;
+        }
+
+        /// In this mock, there is no actual client, so no cancellation
+        fn cancelled(&self) -> bool {
+            false
         }
     }
 }

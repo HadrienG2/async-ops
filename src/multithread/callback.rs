@@ -5,32 +5,68 @@
 //! could technically be implemented on top of it), and can achieve higher
 //! performance, but at the cost of somewhat higher code complexity.
 
+use client::IAsyncOpClient;
 use executor::{CallbackExecutor, AnyCallbackChannel};
-use executor::inline::InlineCallbackExecutor;
 use server::{self, AsyncOpServerConfig};
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
 use std::marker::PhantomData;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 
-/// With callbacks, there is only an asynchronous operation server to create
-fn new_callback_server<Details: AsyncOpStatusDetails + 'static,
-                       F: Fn(AsyncOpStatus<Details>) + 'static,
-                       Executor: CallbackExecutor>(
+/// Asynchronous operation object
+pub struct AsyncOp<Details: AsyncOpStatusDetails + 'static,
+                   Channel: AnyCallbackChannel>
+{
+    /// Server interface used to submit status updates
+    server: AsyncOpServer<Details, Channel>,
+
+    /// Client interface used to monitor the operation status
+    client: AsyncOpClient,
+}
+//
+impl<Details: AsyncOpStatusDetails,
+     Channel: AnyCallbackChannel>
+AsyncOp<Details, Channel> {
+    // NOTE: In this module, the new operator cannot be a struct method, because
+    //       the "Channel" type parameter depends on constructor parameters
+
+    /// Split the asynchronous operation object into client and server
+    /// objects which can be respectively sent to client and server threads
+    pub fn split(self) -> (AsyncOpServer<Details, Channel>, AsyncOpClient) {
+        (self.server, self.client)
+    }
+}
+
+
+/// EXTERNAL constructor of asynchronous operations
+fn new_async_op<Details: AsyncOpStatusDetails + 'static,
+                F: Fn(AsyncOpStatus<Details>) + 'static,
+                Executor: CallbackExecutor>(
     callback: F,
     executor: &mut Executor,
     initial_status: AsyncOpStatus<Details>
-) -> AsyncOpServer<Details, Executor::Channel> {
-    // Setup a callback channel on the active executor
+) -> AsyncOp<Details, Executor::Channel> {
+    // Setup a callback channel on the active executor...
     let callback_channel = executor.setup_callback(callback);
 
-    // Setup the asynchronous operation server with that channel
-    AsyncOpServer::new(
-        CallbackServerConfig {
-            channel: callback_channel,
-            details: PhantomData
+    // ...and a shared cancellation flag...
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+
+    // ...then build the asynchronous operation client and serer
+    AsyncOp {
+        server: AsyncOpServer::new(
+            CallbackServerConfig {
+                channel: callback_channel,
+                cancelled: cancel_flag.clone(),
+                details: PhantomData,
+            },
+            &initial_status
+        ),
+        client: AsyncOpClient {
+            cancelled: cancel_flag,
         },
-        &initial_status
-    )
+    }
 }
 
 
@@ -45,6 +81,9 @@ pub struct CallbackServerConfig<Details: AsyncOpStatusDetails + 'static,
                                 CallbackChannel: AnyCallbackChannel> {
     /// The following callback channel will receive our status updates
     channel: CallbackChannel,
+
+    /// In addition, the client & server also share a cancellation flag
+    cancelled: Arc<AtomicBool>,
 
     /// We need to remember our status details because AnyCallbackChannel won't
     /// be able to do it for us
@@ -62,18 +101,38 @@ AsyncOpServerConfig for CallbackServerConfig<Details, CallbackChannel>
     fn update(&mut self, status: AsyncOpStatus<Details>) {
         self.channel.notify(status);
     }
+
+    /// Method used to query whether the client has cancelled the operation
+    fn cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
 }
+
+
+/// Client interface, used to cancel the asynchronous operation
+pub struct AsyncOpClient {
+    /// In callback-based synchronization, all the client can do is cancel
+    cancelled: Arc<AtomicBool>,
+}
+//
+impl IAsyncOpClient for AsyncOpClient {
+    fn cancel(&mut self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+}
+
 
 
 /// Unit tests
 #[cfg(test)]
 mod tests {
+    use executor::inline::InlineCallbackExecutor;
     use multithread::callback::*;
     use status::{self, StandardAsyncOpStatus};
     use std::cell::Cell;
     use std::rc::Rc;
 
-    /// Check the callback does not get called on operation creation
+    /// Check the initial operation state
     #[test]
     #[allow(unused_variables)]
     fn initial_state() {
@@ -82,11 +141,9 @@ mod tests {
         let c_called = called.clone();
         let callback = move | s: StandardAsyncOpStatus | c_called.set(true);
 
-        // Check that the callback does not get called on server creation
+        // Check that the callback does not get called during server creation
         let mut executor = InlineCallbackExecutor::new();
-        let server = new_callback_server(callback,
-                                         &mut executor,
-                                         status::PENDING);
+        let async_op = new_async_op(callback, &mut executor, status::PENDING);
         assert!(!called.get());
     }
 
@@ -103,11 +160,30 @@ mod tests {
 
         // Check that the callback gets called exactly once on status updates
         let mut executor = InlineCallbackExecutor::new();
-        let mut server = new_callback_server(callback,
-                                             &mut executor,
-                                             status::PENDING);
+        let async_op = new_async_op(callback, &mut executor, status::PENDING);
+        let (mut server, _) = async_op.split();
         server.update(status::DONE);
         assert_eq!(counter.get(), 1);
+    }
+
+    /// Check that cancellation works as expected
+    #[test]
+    #[allow(unused_variables)]
+    fn cancelation() {
+        // This callback will set a boolean flag if called
+        let called = Rc::new(Cell::new(false));
+        let c_called = called.clone();
+        let callback = move | s: StandardAsyncOpStatus | c_called.set(true);
+
+        // Create a test harness
+        let mut executor = InlineCallbackExecutor::new();
+        let async_op = new_async_op(callback, &mut executor, status::PENDING);
+        let (server, mut client) = async_op.split();
+
+        // Check that cancellation works as expected
+        client.cancel();
+        assert!(server.cancelled());
+        assert!(!called.get());
     }
 }
 

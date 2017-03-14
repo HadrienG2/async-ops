@@ -25,6 +25,7 @@
 
 extern crate triple_buffer;
 
+pub mod client;
 pub mod executor;
 pub mod multithread;
 pub mod server;

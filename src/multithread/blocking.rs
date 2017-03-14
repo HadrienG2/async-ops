@@ -5,9 +5,11 @@
 //! and reason about, but should be used with care as the unpredictable
 //! application delays that it introduces can be harmful to performance.
 
+use client::IAsyncOpClient;
 use server::{self, AsyncOpServerConfig};
 use status::{self, AsyncOpStatus, AsyncOpStatusDetails};
 use std::sync::{Arc, Mutex, Condvar};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Asynchronous operation object
 pub struct AsyncOp<Details: AsyncOpStatusDetails> {
@@ -34,6 +36,7 @@ impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
                     }
                 ),
                 update_cv: Condvar::new(),
+                cancelled: AtomicBool::new(false),
             }
         );
 
@@ -83,6 +86,11 @@ impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
         // Notify the reader that an update has occured
         self.shared.update_cv.notify_all();
     }
+
+    /// Method used to query whether the client has cancelled the operation
+    fn cancelled(&self) -> bool {
+        self.shared.cancelled.load(Ordering::Acquire)
+    }
 }
 
 
@@ -123,6 +131,12 @@ impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
         status_lock.status.clone()
     }
 }
+//
+impl<Details: AsyncOpStatusDetails> IAsyncOpClient for AsyncOpClient<Details> {
+    fn cancel(&mut self) {
+        self.shared.cancelled.store(true, Ordering::Release);
+    }
+}
 
 
 /// State shared between the client and the server
@@ -132,6 +146,9 @@ struct SharedState<Details: AsyncOpStatusDetails> {
 
     /// Condition variable used to notify clients about status updates
     update_cv: Condvar,
+
+    /// Atomic boolean used by the client to request cancellation
+    cancelled: AtomicBool,
 }
 //
 struct StatusWithReadBit<Details: AsyncOpStatusDetails> {
@@ -163,6 +180,10 @@ mod tests {
         let status_lock = shared_state.status_lock.lock().unwrap();
         assert_eq!(status_lock.status, status::PENDING);
         assert_eq!(status_lock.read, false);
+
+        // Is it mistakenly cancelled?
+        let cancelled = shared_state.cancelled.load(Ordering::Relaxed);
+        assert!(!cancelled);
     }
 
     /// Check that reading the operation status marks it as read
@@ -263,6 +284,18 @@ mod tests {
         // Wait for the worker to complete and check its final status
         let new_status = worker.join().unwrap();
         assert_eq!(new_status, status::DONE);
+    }
+
+    /// Check that cancellation works as expected
+    #[test]
+    fn cancelation() {
+        // Create an asynchronous operation
+        let async_op = AsyncOp::new(status::PENDING);
+        let (server, mut client) = async_op.split();
+
+        // Make sure that cancelling it works as expected
+        client.cancel();
+        assert!(server.cancelled());
     }
 }
 
