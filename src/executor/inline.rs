@@ -11,8 +11,10 @@ use status::{AsyncOpStatus, AsyncOpStatusDetails};
 use std::any::Any;
 
 
+/// The inline callback executor has no internal state, as all the intelligence
+/// lies in the inline callback channels that it hands back
 pub struct InlineCallbackExecutor {}
-
+//
 impl CallbackExecutor for InlineCallbackExecutor {
     type Channel = AnyInlineCallbackChannel;
 
@@ -30,10 +32,13 @@ impl CallbackExecutor for InlineCallbackExecutor {
     }
 }
 
+
+/// The inline callback channel invokes its internal callback whenever a new
+/// operation status is pushed into it
 pub struct InlineCallbackChannel<'a, Details: AsyncOpStatusDetails> {
     callback: Box<Fn(AsyncOpStatus<Details>) + 'a>,
 }
-
+//
 impl<'a, Details: AsyncOpStatusDetails> CallbackChannel<'a, Details>
     for InlineCallbackChannel<'a, Details>
 {
@@ -42,10 +47,13 @@ impl<'a, Details: AsyncOpStatusDetails> CallbackChannel<'a, Details>
     }
 }
 
+
+/// To work around the associated type limitations discussed in the top-level
+/// executor module, we need a type erasure callback channel wrapper
 pub struct AnyInlineCallbackChannel {
     holder: Box<Any>,
 }
-
+//
 impl AnyCallbackChannel for AnyInlineCallbackChannel {
     fn is_compatible<Details>(&self) -> bool
         where Details: AsyncOpStatusDetails + 'static

@@ -21,6 +21,7 @@
 //! component a callback executor, or executor for short.
 
 pub mod inline;
+// TODO: Add thread pool executor
 
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
 
