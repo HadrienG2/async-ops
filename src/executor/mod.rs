@@ -4,13 +4,13 @@
 //! design issue is to decide how the callback functions should be executed.
 //!
 //! A traditional answer to this problem has been to run callbacks directly on
-//! the asynchronous operation server. While this approach works and has minimal
-//! scheduling overhead, it also has a number of issues that prevent it from
-//! being universally applicable:
+//! the asynchronous operation server. While this approach, known as inline
+//! execution, works and has minimal scheduling overhead, it also has some
+//! issues that prevent it from being universally applicable:
 //!
 //! - Long-running callbacks can have a harmful impact on server performance
 //! - In distributed scenarios where the client and the server live in separate
-//!   hardware spaces, the callback may have a hard time accessing the client
+//!   address spaces, the callback may have a hard time accessing the client
 //! - And in such distributed scenarios, a server-side callback also raises
 //!   serious security issues, since it allows code injection attacks
 //!
@@ -26,8 +26,8 @@ pub mod inline;
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
 
 
-/// A callback executor is in charge of making sure that a client-specified
-/// callback is executed whenever an operation status update is received
+/// Entry point to client-side callback scheduling. Schedules callbacks to be
+/// executed whenever the operation status changes.
 pub trait CallbackExecutor {
     /// Notification channel used by the server to tell the client about updates
     ///
@@ -44,8 +44,8 @@ pub trait CallbackExecutor {
 }
 
 
-/// A callback channel is used by the server to send a status update to the
-/// client, making sure that associated callbacks get executed
+/// Server-side entry point to the client callbacks. Makes sure that the
+/// client-specified callback is scheduled on every status update.
 pub trait CallbackChannel<'a, Details: AsyncOpStatusDetails> {
     /// Notify the client that an operation status update has occured
     fn notify(&mut self, new_status: AsyncOpStatus<Details>);

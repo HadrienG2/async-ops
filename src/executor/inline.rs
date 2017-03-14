@@ -1,18 +1,17 @@
-//! Inline callback executor
+//! Inline callback executor, implementing server-side callback execution
 //!
 //! This callback executor follows the traditional pattern of directly executing
 //! callbacks on the server side. It can harm server performance, and for
 //! security reasons should never be allowed to cross a process or machine
-//! boundary, but for local communication perimeters like coroutines and threads
-//! it can be a good choice for performance-critical short callbacks
+//! boundary, but in local communication perimeters like coroutines and threads
+//! it can be a good choice for short performance-critical callbacks
 
 use executor::{CallbackExecutor, CallbackChannel, AnyCallbackChannel};
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
 use std::any::Any;
 
 
-/// The inline callback executor has no internal state, as all the intelligence
-/// lies in the inline callback channels that it hands back
+/// CallbackExecutor implementation suitable for inline callback execution
 pub struct InlineCallbackExecutor {}
 //
 impl CallbackExecutor for InlineCallbackExecutor {
@@ -33,8 +32,8 @@ impl CallbackExecutor for InlineCallbackExecutor {
 }
 
 
-/// The inline callback channel invokes its internal callback whenever a new
-/// operation status is pushed into it
+/// Callback channel which invokes an internal callback whenever a new operation
+/// status is pushed into it
 pub struct InlineCallbackChannel<'a, Details: AsyncOpStatusDetails> {
     callback: Box<Fn(AsyncOpStatus<Details>) + 'a>,
 }
@@ -48,8 +47,7 @@ impl<'a, Details: AsyncOpStatusDetails> CallbackChannel<'a, Details>
 }
 
 
-/// To work around the associated type limitations discussed in the top-level
-/// executor module, we need a type erasure callback channel wrapper
+/// AnyCallbackChannel implementation corresponding to InlineCallbackChannel
 pub struct AnyInlineCallbackChannel {
     holder: Box<Any>,
 }

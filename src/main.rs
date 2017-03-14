@@ -25,10 +25,10 @@
 
 extern crate triple_buffer;
 
-mod executor;
-mod multithread;
-mod server;
-mod status;
+pub mod executor;
+pub mod multithread;
+pub mod server;
+pub mod status;
 
 use multithread::blocking::AsyncOp;
 
