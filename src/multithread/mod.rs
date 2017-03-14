@@ -14,7 +14,7 @@
 //!   it can have a strong averse effect on application performance
 //! - Callbacks allow a client to schedule code to be executed whenever the
 //!   operation status is updated. This is the most general and powerful
-//!   synchronization mechanism, but it should be used with more care.
+//!   synchronization mechanism, but also the most complex.
 
 
 pub mod blocking;
