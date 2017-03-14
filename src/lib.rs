@@ -30,27 +30,3 @@ pub mod executor;
 pub mod multithread;
 pub mod server;
 pub mod status;
-
-use multithread::blocking::AsyncOp;
-
-
-fn main() {
-    // Create an asynchronous operation
-    let op = AsyncOp::new(status::PENDING);
-
-    // Split it into a client and a server
-    let (op_server, mut op_client) = op.split();
-
-    // Check initial status
-    println!("Initial operation status is {:?}", op_client.status());
-    {
-        // Update the status, then drop the server
-        let mut server = op_server;
-        server.update(status::RUNNING);
-        println!("New operation status is {:?}", op_client.status());
-    }
-
-    // Check final status
-    println!("Final operation status is {:?}", op_client.status());
-    assert_eq!(op_client.status(), status::ERROR_SERVER_KILLED);
-}

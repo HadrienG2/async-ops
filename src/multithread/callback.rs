@@ -40,9 +40,9 @@ AsyncOp<Details, Channel> {
 
 
 /// EXTERNAL constructor of asynchronous operations
-fn new_async_op<Details: AsyncOpStatusDetails + 'static,
-                F: Fn(AsyncOpStatus<Details>) + 'static,
-                Executor: CallbackExecutor>(
+pub fn new_async_op<Details: AsyncOpStatusDetails + 'static,
+                    F: Fn(AsyncOpStatus<Details>) + 'static,
+                    Executor: CallbackExecutor>(
     callback: F,
     executor: &mut Executor,
     initial_status: AsyncOpStatus<Details>
