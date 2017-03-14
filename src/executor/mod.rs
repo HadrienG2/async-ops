@@ -62,8 +62,13 @@ pub trait AnyCallbackChannel {
     fn is_compatible<Details>(&self) -> bool
         where Details: AsyncOpStatusDetails + 'static;
 
-    /// Attempt to notify the client about a status update, will panic if the
-    /// incorrect status details are specified
+    /// Attempt to notify the client about a status update, will panic if
+    /// incorrect status details are specified.
+    ///
+    /// You can check the proper status details for this callback channel using
+    /// the is_compatible() method. Doing so before running notify() for the
+    /// first time is strongly recommended.
+    ///
     fn notify<Details>(&mut self, new_status: AsyncOpStatus<Details>)
         where Details: AsyncOpStatusDetails + 'static;
 }
