@@ -15,6 +15,7 @@ use std::any::Any;
 pub struct InlineCallbackExecutor {}
 //
 impl InlineCallbackExecutor {
+    /// Create a new inline callback executor
     pub fn new() -> Self {
         InlineCallbackExecutor {}
     }
@@ -76,5 +77,60 @@ impl AnyCallbackChannel for AnyInlineCallbackChannel {
 }
 
 
-// TODO: Add tests
+/// Unit tests
+#[cfg(test)]
+mod tests {
+    use executor::inline::*;
+    use status::{self, NoDetails, StandardAsyncOpStatus};
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    // Make sure that executor creation works well
+    #[test]
+    fn new_executor() {
+        let _ = InlineCallbackExecutor::new();
+    }
+
+    // Make sure that callback channels are set up properly
+    #[test]
+    #[allow(unused_variables)]
+    fn callback_setup() {
+        // This callback will set a boolean flag if called
+        let called = Rc::new(Cell::new(false));
+        let c_called = called.clone();
+        let callback = move | s: StandardAsyncOpStatus | c_called.set(true);
+
+        // Setup a callback channel for it
+        let mut executor = InlineCallbackExecutor::new();
+        let channel = executor.setup_callback(callback);
+
+        // Check that the right type of callback channel was created
+        assert!(channel.is_compatible::<NoDetails>());
+
+        // Check that the callback was not called during setup
+        assert!(!called.get());
+    }
+
+    // Make sure that callback channels propagate updates as expected
+    #[test]
+    fn update() {
+        // This callback will increment a counter if called
+        let counter = Rc::new(Cell::new(0));
+        let c_counter = counter.clone();
+        let callback = move | s: StandardAsyncOpStatus | {
+            assert_eq!(s, status::DONE);
+            c_counter.set(c_counter.get() + 1);
+        };
+
+        // Setup a callback channel for it
+        let mut executor = InlineCallbackExecutor::new();
+        let mut channel = executor.setup_callback(callback);
+
+        // Check that the callback gets called exactly once on status updates
+        channel.notify(status::DONE);
+        assert_eq!(counter.get(), 1);
+    }
+}
+
+
 // TODO: Add benchmarks

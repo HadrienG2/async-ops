@@ -24,7 +24,6 @@ fn new_callback_server<F, Executor, Details>(
 {
     // Setup a callback channel on the active executor
     let callback_channel = executor.setup_callback(callback);
-    debug_assert!(callback_channel.is_compatible::<Details>());
 
     // Setup the asynchronous operation server with that channel
     GenericAsyncOpServer::new(
@@ -75,6 +74,8 @@ mod tests {
     use status::{self, StandardAsyncOpStatus};
     use std::cell::Cell;
     use std::rc::Rc;
+
+    // TODO: Review these tests for redundancy with executor tests
 
     /// Check the callback does not get called on operation creation
     #[test]
