@@ -12,7 +12,7 @@ use status::{self, AsyncOpError, AsyncOpStatus, AsyncOpStatusDetails};
 
 
 /// Server interface, used to submit asynchronous operation status updates
-pub struct GenericAsyncOpServer<Configuration: AsyncOpServerConfig> {
+pub struct AsyncOpServer<Configuration: AsyncOpServerConfig> {
     /// User-configurable server behaviour
     config: Configuration,
 
@@ -21,13 +21,13 @@ pub struct GenericAsyncOpServer<Configuration: AsyncOpServerConfig> {
     reached_final_status: bool,
 }
 //
-impl<Config: AsyncOpServerConfig> GenericAsyncOpServer<Config> {
+impl<Config: AsyncOpServerConfig> AsyncOpServer<Config> {
     /// Create a new server interface with some initial status
     pub fn new(
         config: Config,
         initial_status: &AsyncOpStatus<Config::StatusDetails>
     ) -> Self {
-        GenericAsyncOpServer {
+        AsyncOpServer {
             config: config,
             reached_final_status: status::is_final(initial_status),
         }
@@ -45,7 +45,7 @@ impl<Config: AsyncOpServerConfig> GenericAsyncOpServer<Config> {
     }
 }
 //
-impl<Config: AsyncOpServerConfig> Drop for GenericAsyncOpServer<Config> {
+impl<Config: AsyncOpServerConfig> Drop for AsyncOpServer<Config> {
     /// If the server is killed before the operation has reached its final
     /// status, notify the client in order to prevent it from hanging
     fn drop(&mut self) {
@@ -56,7 +56,7 @@ impl<Config: AsyncOpServerConfig> Drop for GenericAsyncOpServer<Config> {
 }
 
 
-/// Configurable parameters of GenericAsyncOpServer
+/// Configurable parameters and behaviour of AsyncOpServer
 pub trait AsyncOpServerConfig {
     /// Implementation details of the asynchronous operation status
     type StatusDetails: AsyncOpStatusDetails;
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn initial_state() {
         // Test initial server state for a non-final status
-        let pending_server = GenericAsyncOpServer::new(
+        let pending_server = AsyncOpServer::new(
             MockServerConfig::new(status::PENDING),
             &status::PENDING
         );
@@ -88,7 +88,7 @@ mod tests {
         assert_eq!(pending_server.reached_final_status, false);
 
         // Test initial server state for a final status
-        let final_server = GenericAsyncOpServer::new(
+        let final_server = AsyncOpServer::new(
             MockServerConfig::new(status::DONE),
             &status::DONE
         );
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn correct_updates() {
         /// Start with a server in the pending state
-        let mut server = GenericAsyncOpServer::new(
+        let mut server = AsyncOpServer::new(
             MockServerConfig::new(status::PENDING),
             &status::PENDING
         );
@@ -126,7 +126,7 @@ mod tests {
     #[should_panic]
     fn incorrect_update() {
         /// Start with a server in a final state
-        let mut server = GenericAsyncOpServer::new(
+        let mut server = AsyncOpServer::new(
             MockServerConfig::new(status::DONE),
             &status::DONE
         );
@@ -145,7 +145,7 @@ mod tests {
 
         // Legitimate drop should work fine
         {
-            let server = GenericAsyncOpServer::new(
+            let server = AsyncOpServer::new(
                 MockServerConfig::new(status::DONE),
                 &status::DONE
             );
@@ -155,7 +155,7 @@ mod tests {
 
         // Dropping an operation with non-final status should be an error
         {
-            let server = GenericAsyncOpServer::new(
+            let server = AsyncOpServer::new(
                 MockServerConfig::new(status::RUNNING),
                 &status::RUNNING
             );

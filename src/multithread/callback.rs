@@ -7,7 +7,7 @@
 
 use executor::{CallbackExecutor, AnyCallbackChannel};
 use executor::inline::InlineCallbackExecutor;
-use server::{GenericAsyncOpServer, AsyncOpServerConfig};
+use server::{self, AsyncOpServerConfig};
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
 use std::marker::PhantomData;
 
@@ -24,7 +24,7 @@ fn new_callback_server<Details: AsyncOpStatusDetails + 'static,
     let callback_channel = executor.setup_callback(callback);
 
     // Setup the asynchronous operation server with that channel
-    GenericAsyncOpServer::new(
+    AsyncOpServer::new(
         CallbackServerConfig {
             channel: callback_channel,
             details: PhantomData
@@ -37,7 +37,7 @@ fn new_callback_server<Details: AsyncOpStatusDetails + 'static,
 /// Server interface, used to send operation status updates to the client
 pub type AsyncOpServer<Details: AsyncOpStatusDetails + 'static,
                        Channel: AnyCallbackChannel> =
-    GenericAsyncOpServer<CallbackServerConfig<Details, Channel>>;
+    server::AsyncOpServer<CallbackServerConfig<Details, Channel>>;
 
 
 /// Server configuration for callback-based operation monitoring

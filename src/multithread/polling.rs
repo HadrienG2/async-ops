@@ -6,7 +6,7 @@
 //! periodically check its status, as is the case for example when updating
 //! progress bars and status graphs in user interfaces.
 
-use server::{GenericAsyncOpServer, AsyncOpServerConfig};
+use server::{self, AsyncOpServerConfig};
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
 use triple_buffer::{TripleBuffer, TripleBufferInput, TripleBufferOutput};
 
@@ -32,7 +32,7 @@ impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
 
         // ...then build the client and server
         AsyncOp {
-            server: GenericAsyncOpServer::new(
+            server: AsyncOpServer::new(
                 PollingServerConfig { buf_input: buf_input },
                 &initial_status_copy
             ),
@@ -50,7 +50,7 @@ impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
 
 /// Server interface, used to send operation status updates to the client
 pub type AsyncOpServer<Details: AsyncOpStatusDetails> =
-    GenericAsyncOpServer<PollingServerConfig<Details>>;
+    server::AsyncOpServer<PollingServerConfig<Details>>;
 
 
 /// Server configuration for polling-based operation monitoring

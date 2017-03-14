@@ -5,7 +5,7 @@
 //! and reason about, but should be used with care as the unpredictable
 //! application delays that it introduces can be harmful to performance.
 
-use server::{GenericAsyncOpServer, AsyncOpServerConfig};
+use server::{self, AsyncOpServerConfig};
 use status::{self, AsyncOpStatus, AsyncOpStatusDetails};
 use std::sync::{Arc, Mutex, Condvar};
 
@@ -39,7 +39,7 @@ impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
 
         // ...then build the client and server
         AsyncOp {
-            server: GenericAsyncOpServer::new(
+            server: AsyncOpServer::new(
                 BlockingServerConfig { shared: shared_state.clone() },
                 &initial_status_copy
             ),
@@ -57,7 +57,7 @@ impl<Details: AsyncOpStatusDetails> AsyncOp<Details> {
 
 /// Server interface, used to send operation status updates to the client
 pub type AsyncOpServer<Details: AsyncOpStatusDetails> =
-    GenericAsyncOpServer<BlockingServerConfig<Details>>;
+    server::AsyncOpServer<BlockingServerConfig<Details>>;
 
 
 /// Server configuration for blocking operation monitoring
