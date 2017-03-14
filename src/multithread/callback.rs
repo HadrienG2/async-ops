@@ -13,15 +13,13 @@ use std::marker::PhantomData;
 
 
 /// With callbacks, there is only an asynchronous operation server to create
-fn new_callback_server<F, Executor, Details>(
+fn new_callback_server<Details: AsyncOpStatusDetails + 'static,
+                       F: Fn(AsyncOpStatus<Details>) + 'static,
+                       Executor: CallbackExecutor>(
     callback: F,
     executor: &mut Executor,
     initial_status: AsyncOpStatus<Details>
-) -> AsyncOpServer<Details, Executor::Channel>
-    where Details: AsyncOpStatusDetails + 'static,
-          F: Fn(AsyncOpStatus<Details>) + 'static,
-          Executor: CallbackExecutor
-{
+) -> AsyncOpServer<Details, Executor::Channel> {
     // Setup a callback channel on the active executor
     let callback_channel = executor.setup_callback(callback);
 
@@ -75,8 +73,6 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    // TODO: Review these tests for redundancy with executor tests
-
     /// Check the callback does not get called on operation creation
     #[test]
     #[allow(unused_variables)]
@@ -86,10 +82,8 @@ mod tests {
         let c_called = called.clone();
         let callback = move | s: StandardAsyncOpStatus | c_called.set(true);
 
-        // It will be executed on a simple inline callback executor
-        let mut executor = InlineCallbackExecutor::new();
-
         // Check that the callback does not get called on server creation
+        let mut executor = InlineCallbackExecutor::new();
         let server = new_callback_server(callback,
                                          &mut executor,
                                          status::PENDING);
@@ -98,19 +92,17 @@ mod tests {
 
     /// Check that the callback is called on status updates
     #[test]
-    #[allow(unused_variables)]
     fn update() {
         // This callback will increment a counter if called
         let counter = Rc::new(Cell::new(0));
         let c_counter = counter.clone();
         let callback = move | s: StandardAsyncOpStatus | {
+            assert_eq!(s, status::DONE);
             c_counter.set(c_counter.get() + 1);
         };
 
-        // It will be executed on a simple inline callback executor
-        let mut executor = InlineCallbackExecutor::new();
-
         // Check that the callback gets called exactly once on status updates
+        let mut executor = InlineCallbackExecutor::new();
         let mut server = new_callback_server(callback,
                                              &mut executor,
                                              status::PENDING);
