@@ -20,6 +20,8 @@
 //! consistency with the terminology of C++ tasking runtimes, we will call this
 //! component a callback executor, or executor for short.
 
+pub mod inline;
+
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
 
 
@@ -28,33 +30,39 @@ use status::{AsyncOpStatus, AsyncOpStatusDetails};
 pub trait CallbackExecutor {
     /// Notification channel used by the server to tell the client about updates
     ///
-    /// TODO: Avoid type erasure issues once associated type constructors land
-    ///       in Rust by switching to a CallbackChannel<Details> type family
+    /// TODO: Once associated type constructors land in Rust, avoid type erasure
+    ///       issues and allow non-static callback lifetimes by switching to a
+    ///       CallbackChannel<'a, Details> type family
     ///
     type Channel: AnyCallbackChannel;
 
     /// Setup an asynchronous notification channel with a certain callback
     fn setup_callback<F, Details>(&mut self, callback: F) -> Self::Channel
-        where F: Fn(AsyncOpStatus<Details>), Details: AsyncOpStatusDetails;
+        where F: Fn(AsyncOpStatus<Details>) + 'static,
+              Details: AsyncOpStatusDetails + 'static;
 }
 
 
 /// A callback channel is used by the server to send a status update to the
 /// client, making sure that associated callbacks get executed
-pub trait CallbackChannel<Details: AsyncOpStatusDetails> {
+pub trait CallbackChannel<'a, Details: AsyncOpStatusDetails> {
     /// Notify the client that an operation status update has occured
     fn notify(&mut self, new_status: AsyncOpStatus<Details>);
 }
 
 
 /// Type-erased variant of CallbackChannel, used as a temporary workaround until
-/// associated type constructors land in Rust. Less efficient and panics...
+/// associated type constructors land in Rust
+///
+/// TODO: Deprecate this once associated type constructors land in Rust.
+///
 pub trait AnyCallbackChannel {
     /// Check if the callback channel was configured for the right status type
-    fn is_compatible<Details: AsyncOpStatusDetails>(&self) -> bool;
+    fn is_compatible<Details>(&self) -> bool
+        where Details: AsyncOpStatusDetails + 'static;
 
     /// Attempt to notify the client about a status update, will panic if the
     /// incorrect status details are specified
     fn notify<Details>(&mut self, new_status: AsyncOpStatus<Details>)
-        where Details: AsyncOpStatusDetails;
+        where Details: AsyncOpStatusDetails + 'static;
 }
