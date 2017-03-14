@@ -25,6 +25,7 @@
 
 extern crate triple_buffer;
 
+mod executor;
 mod multithread;
 mod server;
 mod status;
