@@ -14,6 +14,12 @@ use std::any::Any;
 /// CallbackExecutor implementation suitable for inline callback execution
 pub struct InlineCallbackExecutor {}
 //
+impl InlineCallbackExecutor {
+    pub fn new() -> Self {
+        InlineCallbackExecutor {}
+    }
+}
+//
 impl CallbackExecutor for InlineCallbackExecutor {
     type Channel = AnyInlineCallbackChannel;
 
@@ -68,3 +74,7 @@ impl AnyCallbackChannel for AnyInlineCallbackChannel {
         channel.notify(new_status);
     }
 }
+
+
+// TODO: Add tests
+// TODO: Add benchmarks
