@@ -5,46 +5,65 @@
 //! could technically be implemented on top of it), and can achieve higher
 //! performance, but at the cost of somewhat higher code complexity.
 
+use executor::{CallbackExecutor, AnyCallbackChannel};
+use executor::inline::InlineCallbackExecutor;
 use server::{GenericAsyncOpServer, AsyncOpServerConfig};
 use status::{AsyncOpStatus, AsyncOpStatusDetails};
-
-
-// TODO: Ajouter des exécuteurs
+use std::marker::PhantomData;
 
 
 /// With callbacks, there is only an asynchronous operation server to create
-fn new_callback_server<Details: AsyncOpStatusDetails,
-                       F: Fn(AsyncOpStatus<Details>) + 'static>(
+fn new_callback_server<F, Executor, Details>(
     callback: F,
+    executor: &mut Executor,
     initial_status: AsyncOpStatus<Details>
-) -> AsyncOpServer<Details> {
+) -> AsyncOpServer<Details, Executor::Channel>
+    where Details: AsyncOpStatusDetails + 'static,
+          F: Fn(AsyncOpStatus<Details>) + 'static,
+          Executor: CallbackExecutor
+{
+    // Setup a callback channel on the active executor
+    let callback_channel = executor.setup_callback(callback);
+    debug_assert!(callback_channel.is_compatible::<Details>());
+
+    // Setup the asynchronous operation server with that channel
     GenericAsyncOpServer::new(
-        CallbackServerConfig { callback: Box::new(callback) },
+        CallbackServerConfig {
+            channel: callback_channel,
+            details: PhantomData
+        },
         &initial_status
     )
 }
 
 
 /// Server interface, used to send operation status updates to the client
-pub type AsyncOpServer<Details: AsyncOpStatusDetails> =
-    GenericAsyncOpServer<CallbackServerConfig<Details>>;
+pub type AsyncOpServer<Details: AsyncOpStatusDetails + 'static,
+                       Channel: AnyCallbackChannel> =
+    GenericAsyncOpServer<CallbackServerConfig<Details, Channel>>;
 
 
 /// Server configuration for callback-based operation monitoring
-pub struct CallbackServerConfig<Details: AsyncOpStatusDetails> {
-    /// The following callback will be invoked on every status change
-    callback: Box<Fn(AsyncOpStatus<Details>)>,
+pub struct CallbackServerConfig<Details: AsyncOpStatusDetails + 'static,
+                                CallbackChannel: AnyCallbackChannel> {
+    /// The following callback channel will receive our status updates
+    channel: CallbackChannel,
+
+    /// We need to remember our status details because AnyCallbackChannel won't
+    /// be able to do it for us
+    details: PhantomData<Details>,
 }
 //
-impl<Details: AsyncOpStatusDetails> AsyncOpServerConfig
-    for CallbackServerConfig<Details>
+impl<Details: AsyncOpStatusDetails + 'static,
+     CallbackChannel: AnyCallbackChannel>
+AsyncOpServerConfig for CallbackServerConfig<Details, CallbackChannel>
 {
     /// Implementation details of the asynchronous operation status
     type StatusDetails = Details;
 
     /// Method used to send a status update to the client
     fn update(&mut self, status: AsyncOpStatus<Details>) {
-        (self.callback)(status);
+        self.channel.notify(status);
     }
 }
 
@@ -66,8 +85,13 @@ mod tests {
         let c_called = called.clone();
         let callback = move | s: StandardAsyncOpStatus | c_called.set(true);
 
+        // It will be executed on a simple inline callback executor
+        let mut executor = InlineCallbackExecutor::new();
+
         // Check that the callback does not get called on server creation
-        let server = new_callback_server(callback, status::PENDING);
+        let server = new_callback_server(callback,
+                                         &mut executor,
+                                         status::PENDING);
         assert!(!called.get());
     }
 
@@ -82,8 +106,13 @@ mod tests {
             c_counter.set(c_counter.get() + 1);
         };
 
+        // It will be executed on a simple inline callback executor
+        let mut executor = InlineCallbackExecutor::new();
+
         // Check that the callback gets called exactly once on status updates
-        let mut server = new_callback_server(callback, status::PENDING);
+        let mut server = new_callback_server(callback,
+                                             &mut executor,
+                                             status::PENDING);
         server.update(status::DONE);
         assert_eq!(counter.get(), 1);
     }
