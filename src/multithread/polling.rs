@@ -109,6 +109,7 @@ impl<Details: AsyncOpStatusDetails> AsyncOpClient<Details> {
 }
 //
 impl<Details: AsyncOpStatusDetails> IAsyncOpClient for AsyncOpClient<Details> {
+    /// Request the cancellation of the active asynchronous operation
     fn cancel(&mut self) {
         self.cancelled.store(true, Ordering::Release);
     }

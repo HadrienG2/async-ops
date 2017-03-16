@@ -22,8 +22,10 @@ impl InlineCallbackExecutor {
 }
 //
 impl CallbackExecutor for InlineCallbackExecutor {
+    /// Notification channel used by the server to tell the client about updates
     type Channel = AnyInlineCallbackChannel;
 
+    /// Setup an asynchronous notification channel with a certain callback
     fn setup_callback<F, Details>(&mut self, callback: F) -> Self::Channel
         where F: Fn(AsyncOpStatus<Details>) + 'static,
               Details: AsyncOpStatusDetails + 'static
@@ -48,6 +50,7 @@ pub struct InlineCallbackChannel<'a, Details: AsyncOpStatusDetails> {
 impl<'a, Details: AsyncOpStatusDetails> CallbackChannel<'a, Details>
     for InlineCallbackChannel<'a, Details>
 {
+    /// Notify the client that an operation status update has occured
     fn notify(&mut self, new_status: AsyncOpStatus<Details>) {
         (self.callback)(new_status);
     }
@@ -60,12 +63,15 @@ pub struct AnyInlineCallbackChannel {
 }
 //
 impl AnyCallbackChannel for AnyInlineCallbackChannel {
+    /// Check if the channel was configured for the right operation status type
     fn is_compatible<Details>(&self) -> bool
         where Details: AsyncOpStatusDetails + 'static
     {
         self.holder.is::<InlineCallbackChannel<Details>>()
     }
 
+    /// Attempt to notify the client about a status update, will panic if
+    /// incorrect status details are specified.
     fn notify<Details>(&mut self, new_status: AsyncOpStatus<Details>)
         where Details: AsyncOpStatusDetails + 'static
     {

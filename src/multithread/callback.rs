@@ -116,6 +116,7 @@ pub struct AsyncOpClient {
 }
 //
 impl IAsyncOpClient for AsyncOpClient {
+    /// Request the cancellation of the active asynchronous operation
     fn cancel(&mut self) {
         self.cancelled.store(true, Ordering::Release);
     }
