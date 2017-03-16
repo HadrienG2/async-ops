@@ -3,8 +3,8 @@
 //! This package provides facilities to represent and reason about the status
 //! of asynchronous operations. The model is the following: any kind of async
 //! operation can be represented as a state machine which starts on the client
-//! side in a pending state, is hopefully scheduled and run on the server, goes
-//! through a number of intermediary "running" stats in this process, and
+//! side in a pending state, is hopefully scheduled and executed on the server,
+//! goes through a number of intermediary "running" stats in this process, and
 //! finally ends up in a successful of unsuccessful final state.
 
 use std::error::Error;
@@ -15,7 +15,7 @@ use std::fmt::{self, Debug};
 ///
 /// This enumeration is used to represent the status of an asynchronous
 /// operation. It follows a state machine design, with customization points
-/// so that each application can add whichever extra information it needs.
+/// allowing each application to add whichever extra information it needs.
 ///
 /// Here are the possible state transitions:
 ///
@@ -45,9 +45,6 @@ pub enum AsyncOpStatus<Details: AsyncOpStatusDetails> {
     /// The server has failed to process the request
     Error(AsyncOpError<Details>),
 }
-//
-impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
-    for AsyncOpStatus<Details> {}
 
 
 /// Check if an operation status is final (i.e. won't change anymore)
@@ -72,13 +69,6 @@ pub enum AsyncOpError<Details: AsyncOpStatusDetails> {
     #[allow(dead_code)]
     CustomError(Details::ErrorDetails)
 }
-//
-impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
-    for AsyncOpError<Details> {}
-
-
-/// Trait bounds which every part of the operation status should honor
-pub trait AsyncOpStatusTraits: Clone + Debug + PartialEq + Send {}
 
 
 /// Implementation-specific details on the status of asynchronous operations
@@ -98,7 +88,7 @@ pub trait AsyncOpStatusDetails: AsyncOpStatusTraits {
 
     /// Details on the status of completed operations
     ///
-    /// Possible usage: Provide or give access to the operation's result.
+    /// Possible usage: Contain or give access to an operation's result.
     ///
     type DoneDetails: AsyncOpStatusTraits;
 
@@ -137,11 +127,9 @@ impl Error for NoDetails {
         None
     }
 }
-//
-impl AsyncOpStatusTraits for NoDetails {}
 
 
-/// Fully standard asynchronous operation statuses, without any detail
+/// Fully standardized asynchronous operation statuses, without any detail
 pub type StandardAsyncOpStatus = AsyncOpStatus<NoDetails>;
 //
 pub const PENDING: StandardAsyncOpStatus =
@@ -162,6 +150,18 @@ impl AsyncOpStatusDetails for NoDetails {
     type CancelledDetails = NoDetails;
     type ErrorDetails = NoDetails;
 }
+
+
+/// Trait bounds which every part of the operation status should honor
+pub trait AsyncOpStatusTraits: Clone + Debug + PartialEq + Send {}
+//
+impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
+    for AsyncOpStatus<Details> {}
+//
+impl<Details: AsyncOpStatusDetails> AsyncOpStatusTraits
+    for AsyncOpError<Details> {}
+//
+impl AsyncOpStatusTraits for NoDetails {}
 
 
 /// Unit tests
