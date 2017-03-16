@@ -2,16 +2,17 @@
 
 ## Motivation
 
-In a world of massively parallel computer hardware, delegating work has become a
-performance-critical software engineering skill.
+In a world of massively parallel hardware, it is now widely acknowledged that
+offloading as much work as possible to other CPU cores, DMA-enabled IO
+interfaces, specialized co-processors such as GPUs, or even remote servers over
+a network, is often critical to achieving optimal software performance.
 
-It is now widely acknowledged that offloading as much work as possible to other
-CPU cores, DMA-enabled IO interfaces, specialized co-processors such as GPUs, or
-even remote servers over a network, is often critical to optimal performance on
-modern hardware. It is also acknowledged that waiting for such operations to
-complete when there is more work to do is a waste of valuable CPU time, and that
-spawning lots of threads to handle such blocking workloads is a waste of system
-resources. For all of these reasons, the future of high-performance applications
+It is also acknowledged that waiting for such parallel operations to complete
+when there is more work to do on other hardware resources is a waste of valuable
+CPU time, and that spawning lots of threads to handle such blocking workloads
+can easily become a problematic waste of system resources.
+
+For all of these reasons, the future of high-performance applications
 lies in extensive use of asynchronous APIs, in which a client is not forced to
 wait for the completion of an offloaded operation before doing something else.
 
@@ -41,7 +42,7 @@ software abstractions. Examples include:
 - OpenCL-like event objects
 - POSIX 1b asynchronous IO requests
 - poll(), epoll(), select(), kqueue(), and API-specific variants thereof
-- Process-local callbacks and UNIX signals
+- Process-local callbacks and inter-process UNIX signals
 
 In this context, this project aims as answering the following questions:
 
@@ -56,7 +57,7 @@ In this context, this project aims as answering the following questions:
 
 If this project is successful, the expected benefit is to open the way for a
 consistent and efficient asynchronous programming model, usable at any scale,
-allowing for abstractions which are more familiar to programmers rather than
+allowing for abstractions which are familiar to many programmers rather than
 being domain-specific, and enabling fearless major implementation changes
 without interface breakages for API designers.
 
@@ -73,5 +74,5 @@ Future areas to be explored include:
 
 - Monitoring multiple operations concurrently using an ANY/ALL operator
 - Expanding the abstraction to smaller scales (coroutines) and larger scales
-  (IPC, OpenCL & IO, RPC)
+  (interprocess communication, OpenCL, IO, remote procedure calls)
 - Extra options for asynchronous callback scheduling
