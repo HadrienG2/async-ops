@@ -23,15 +23,14 @@ machines, whose states can be roughly classified in three broad categories:
 - During an asynchronous request's execution, if accepted by a server (running)
 - After the server is done with the request (done, erronerous, or cancelled)
 
-The purpose of an asynchronous API is to give a client access to this state
-machine and means to monitor its evolution. All APIs do so in some of the
-following ways:
+The purpose of asynchronous APIs is to give a client a way to monitor the
+evolution of this state machine. They all do so in some of the following ways:
 
 - Let a client query the status of the asynchronous operation (polling)
 - Allow a client to wait for status changes (blocking)
 - Schedule client-specified code to run when the status changes (callbacks)
 
-The takeaway point here is that at a conceptual level, all asynchronous APIs
+An important point here is that at a conceptual level, all asynchronous APIs
 follow very similar design principles. Unfortunately, the same cannot be said
 of their implementation. Far from the conceptual homogeneity of blocking APIs,
 asynchronous APIs are usually implemented using a wild mixture of incompatible
@@ -76,3 +75,13 @@ Future areas to be explored include:
 - Expanding the abstraction to smaller scales (coroutines) and larger scales
   (interprocess communication, OpenCL, IO, remote procedure calls)
 - Extra options for asynchronous callback scheduling
+
+
+## License
+
+This crate is distributed under the terms of the LGPLv3 license. See the
+LICENSE-LGPL-3.0.md file for details.
+
+More relaxed licensing (Apache, MIT, BSD...) may also be negociated, in
+exchange of a financial contribution. Contact me for details at 
+knights_of_ni AT gmx DOTCOM.
