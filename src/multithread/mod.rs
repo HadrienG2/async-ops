@@ -1,7 +1,7 @@
 //! Multithreaded asynchronous operation monitoring
 //!
 //! This submodule provides facilities for asynchronous operation monitoring, in
-//! situations where the worker is another thread running in the same OS process
+//! situations where the server is another thread running in the same OS process
 //! as the asynchronous operation client.
 //!
 //! Three monitoring mechanisms are proposed:
@@ -14,7 +14,7 @@
 //!   it can have a strong averse effect on application performance
 //! - Callbacks allow a client to schedule code to be executed whenever the
 //!   operation status is updated. This is the most general and powerful
-//!   synchronization mechanism, but also the most complex.
+//!   synchronization mechanism, but also the most complex one.
 
 
 pub mod blocking;

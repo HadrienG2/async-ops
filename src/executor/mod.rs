@@ -4,9 +4,10 @@
 //! design issue is to decide how the callback functions should be executed.
 //!
 //! A traditional answer to this problem has been to run callbacks directly on
-//! the asynchronous operation server. While this approach, known as inline
-//! execution, works and has minimal scheduling overhead, it also has some
-//! issues that prevent it from being universally applicable:
+//! the asynchronous operation server, as part of the status update process.
+//! While this approach, also known as inline callback execution, works and has
+//! minimal scheduling overhead, it also has some issues that prevent it from
+//! being universally applicable:
 //!
 //! - Long-running callbacks can have a harmful impact on server performance
 //! - In distributed scenarios where the client and the server live in separate
@@ -44,8 +45,8 @@ pub trait CallbackExecutor {
 }
 
 
-/// Server-side entry point to the client callbacks. Makes sure that the
-/// client-specified callback is scheduled on every status update.
+/// Client-side entry point used to have callacks called on status updates. Can
+/// be extended to the server side through simple message-passing techniques.
 pub trait CallbackChannel<'a, Details: AsyncOpStatusDetails> {
     /// Notify the client that an operation status update has occured
     fn notify(&mut self, new_status: AsyncOpStatus<Details>);
@@ -58,7 +59,7 @@ pub trait CallbackChannel<'a, Details: AsyncOpStatusDetails> {
 /// TODO: Deprecate this once associated type constructors land in Rust.
 ///
 pub trait AnyCallbackChannel {
-    /// Check if the callback channel was configured for the right status type
+    /// Check if the channel was configured for the right operation status type
     fn is_compatible<Details>(&self) -> bool
         where Details: AsyncOpStatusDetails + 'static;
 

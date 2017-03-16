@@ -1,4 +1,4 @@
-//! Inline callback executor, implementing server-side callback execution
+//! Inline callback executor, implementing synchronous callback execution
 //!
 //! This callback executor follows the traditional pattern of directly executing
 //! callbacks on the server side. It can harm server performance, and for

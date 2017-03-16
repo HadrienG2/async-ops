@@ -2,8 +2,8 @@
 //!
 //! This module provides a way to monitor asynchronous operations through
 //! polling. It provides maximal performance in scenarios where a client does
-//! not need to synchronize with an asynchronous operation, but only to
-//! periodically check its status, as is the case for example when updating
+//! not need to synchronize with asynchronous operation status updates, but only
+//! to periodically check the status, as is the case for example when updating
 //! progress bars and status graphs in user interfaces.
 
 use client::IAsyncOpClient;

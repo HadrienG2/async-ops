@@ -173,7 +173,7 @@ mod tests {
     }
 
 
-    /// Mock server config, suitable for unit testing
+    /// Mock server configuration, suitable for unit testing
     struct MockServerConfig {
         /// Last status update sent by the server
         last_status: Rc<RefCell<StandardAsyncOpStatus>>,

@@ -109,7 +109,7 @@ AsyncOpServerConfig for CallbackServerConfig<Details, CallbackChannel>
 }
 
 
-/// Client interface, used to cancel the asynchronous operation
+/// Client interface, only used to cancel the asynchronous operation
 pub struct AsyncOpClient {
     /// In callback-based synchronization, all the client can do is cancel
     cancelled: Arc<AtomicBool>,
